@@ -23,6 +23,7 @@ public sealed class RxDispatcher(TimeSpan? batchInterval = null, int capacity = 
     private Task? _pump;
     private Task? _batcher;
     private long _dropped;
+    private int _disposeState;
     public event EventHandler<IReadOnlyList<CanFrame>>? FramesBatched;
     public long DroppedFrameCount => Interlocked.Read(ref _dropped);
     public void AddFilter(IFrameFilter filter) => _filters.Add(filter ?? throw new ArgumentNullException(nameof(filter)));
@@ -48,5 +49,28 @@ public sealed class RxDispatcher(TimeSpan? batchInterval = null, int capacity = 
         try { while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false)) { while (_channel.Reader.TryRead(out var frame)) batch.Add(frame); if (batch.Count > 0) { FramesBatched?.Invoke(this, batch.ToArray()); batch.Clear(); } } }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
-    public async ValueTask DisposeAsync() { if (_cts is null) return; await _cts.CancelAsync().ConfigureAwait(false); if (_pump is not null) await _pump.ConfigureAwait(false); if (_batcher is not null) await _batcher.ConfigureAwait(false); _cts.Dispose(); }
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
+        var cancellation = Interlocked.Exchange(ref _cts, null);
+        if (cancellation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await cancellation.CancelAsync().ConfigureAwait(false);
+            if (_pump is not null) await _pump.ConfigureAwait(false);
+            if (_batcher is not null) await _batcher.ConfigureAwait(false);
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
+    }
 }

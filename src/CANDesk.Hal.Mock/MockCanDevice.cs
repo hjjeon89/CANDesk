@@ -22,6 +22,7 @@ public sealed class MockCanDevice(string channelName, MockCanMode mode = MockCan
     private IReadOnlyList<MockTraceFrame> _tracePlayback = [];
     private CancellationTokenSource? _sessionCancellation;
     private Task? _modeTask;
+    private int _disposeState;
 
     public string ChannelName { get; } = channelName;
     public MockCanMode Mode { get; set; } = mode;
@@ -182,6 +183,11 @@ public sealed class MockCanDevice(string channelName, MockCanMode mode = MockCan
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         await CloseAsync().ConfigureAwait(false);
         await _lifetime.CancelAsync().ConfigureAwait(false);
         _frames.Writer.TryComplete();

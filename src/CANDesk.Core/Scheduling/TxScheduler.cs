@@ -42,6 +42,7 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
     }
     private readonly ConcurrentDictionary<Guid, Job> _jobs = new();
     private readonly CancellationTokenSource _shutdown = new();
+    private int _disposeState;
 
     public event EventHandler<TxSchedulerErrorEventArgs>? ErrorOccurred;
 
@@ -148,12 +149,18 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
 
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _shutdown.Cancel();
-        _shutdown.Dispose();
         foreach (var id in _jobs.Keys)
         {
             Cancel(id);
         }
+
+        _shutdown.Dispose();
 
         return ValueTask.CompletedTask;
     }

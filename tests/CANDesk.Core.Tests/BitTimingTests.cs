@@ -6,6 +6,25 @@ namespace CANDesk.Core.Tests;
 public sealed class BitTimingTests
 {
     [Fact]
+    public void RawSegments_DescribeReturnsEffectiveBitrateAndSamplePoint()
+    {
+        var calculator = new BitTimingCalculator();
+
+        var effective = calculator.Describe(new RawBitTimingSegments(10, 13, 2, 2), 80_000_000);
+
+        Assert.Equal(500, effective.BitrateKbps);
+        Assert.Equal(87.5, effective.SamplePointPercent);
+    }
+
+    [Fact]
+    public void RawSegments_RejectsSjwGreaterThanTseg2()
+    {
+        var segments = new RawBitTimingSegments(1, 13, 2, 3);
+
+        Assert.Throws<ArgumentOutOfRangeException>(segments.Validate);
+    }
+
+    [Fact]
     public void ClassicConfiguration_HasNominalTimingOnly()
     {
         var configuration = new CanBusConfig { Mode = CanBusMode.Classic, Nominal = new(500, 87.5) };

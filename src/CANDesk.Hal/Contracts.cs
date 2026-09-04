@@ -6,10 +6,51 @@ public sealed record CanDeviceDescriptor(string Vendor, string DeviceId, string 
     bool SupportsCanFd, int? ClockFrequencyHz = null);
 public enum CanBusMode { Classic, Fd }
 
+/// <summary>Specifies whether a timing phase is configured from a bitrate preset or controller register segments.</summary>
+public enum BitTimingInputMode { Preset, RawSegments }
+
 /// <summary>Timing for a single CAN arbitration or CAN-FD data phase.</summary>
 public sealed record BitTimingSetting(int BitrateKbps, double SamplePointPercent, bool IsCustom = false)
 {
     public override string ToString() => $"{BitrateKbps:N0} kbps / {SamplePointPercent:0.#}%";
+}
+
+/// <summary>Controller-level timing values for fine tuning a nominal or CAN-FD data phase.</summary>
+public sealed record RawBitTimingSegments(int Prescaler, int Tseg1, int Tseg2, int Sjw)
+{
+    public void Validate()
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Prescaler);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Tseg1);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Tseg2);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Sjw);
+        if (Sjw > Tseg2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(Sjw), "SJW cannot exceed TSeg2.");
+        }
+    }
+}
+
+/// <summary>Timing input for one bus phase. Exactly one representation is active based on <see cref="InputMode"/>.</summary>
+public sealed record BitTimingConfig
+{
+    public BitTimingInputMode InputMode { get; init; } = BitTimingInputMode.Preset;
+    public BitTimingSetting? Preset { get; init; } = new(500, 87.5);
+    public RawBitTimingSegments? RawSegments { get; init; }
+
+    public void Validate()
+    {
+        if (InputMode == BitTimingInputMode.Preset)
+        {
+            if (Preset is null) throw new InvalidOperationException("Preset timing requires a bitrate and sample point.");
+            if (Preset.BitrateKbps <= 0 || Preset.SamplePointPercent is <= 0 or > 100)
+                throw new ArgumentOutOfRangeException(nameof(Preset), "Preset timing is outside the supported range.");
+            return;
+        }
+
+        if (RawSegments is null) throw new InvalidOperationException("Raw segment timing requires prescaler, TSeg1, TSeg2, and SJW.");
+        RawSegments.Validate();
+    }
 }
 
 /// <summary>
@@ -21,6 +62,8 @@ public sealed record CanBusConfig
     public CanBusMode Mode { get; init; } = CanBusMode.Classic;
     public BitTimingSetting Nominal { get; init; } = new(500, 87.5);
     public BitTimingSetting? Data { get; init; }
+    public BitTimingConfig NominalTiming { get; init; } = new();
+    public BitTimingConfig? DataTiming { get; init; }
     public bool IsCanFd => Mode == CanBusMode.Fd;
 
     public CanBusConfig() { }
@@ -32,6 +75,8 @@ public sealed record CanBusConfig
         Data = Mode == CanBusMode.Fd && dataBitRate.HasValue
             ? new((int)(dataBitRate.Value / 1_000), dataSamplePoint ?? 80.0)
             : null;
+        NominalTiming = new BitTimingConfig { Preset = Nominal };
+        DataTiming = Data is null ? null : new BitTimingConfig { Preset = Data };
     }
 
     /// <summary>Reject incomplete or contradictory bus timing before a vendor driver opens a channel.</summary>
@@ -43,6 +88,10 @@ public sealed record CanBusConfig
         if (Mode == CanBusMode.Classic && Data is not null)
             throw new InvalidOperationException("Classic CAN must not define CAN-FD data phase timing.");
         if (Data is not null) ValidateTiming(Data, nameof(Data));
+        NominalTiming.Validate();
+        if (Mode == CanBusMode.Classic && DataTiming is not null)
+            throw new InvalidOperationException("Classic CAN must not define a CAN-FD data timing configuration.");
+        DataTiming?.Validate();
     }
 
     private static void ValidateTiming(BitTimingSetting timing, string propertyName)
@@ -64,10 +113,56 @@ public interface IBitrateTableProvider
 /// <summary>Converts a bitrate/sample-point request for legacy SDKs that require controller register values.</summary>
 public interface IBitTimingCalculator
 {
-    CanBitTimingRegisters Calculate(BitTimingSetting setting, int deviceClockHz);
+    RawBitTimingSegments Calculate(BitTimingSetting setting, int deviceClockHz);
+    (int BitrateKbps, double SamplePointPercent) Describe(RawBitTimingSegments segments, int deviceClockHz);
 }
 
-public readonly record struct CanBitTimingRegisters(int Prescaler, int Tseg1, int Tseg2, int Sjw);
+/// <summary>Generic CAN controller timing calculator for SDKs that expose BRP/TSEG/SJW registers.</summary>
+public sealed class BitTimingCalculator : IBitTimingCalculator
+{
+    public RawBitTimingSegments Calculate(BitTimingSetting setting, int deviceClockHz)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(deviceClockHz);
+        if (setting.BitrateKbps <= 0 || setting.SamplePointPercent is <= 0 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(setting));
+
+        var requestedBitrate = setting.BitrateKbps * 1_000d;
+        var bestError = double.MaxValue;
+        RawBitTimingSegments? best = null;
+        for (var totalTq = 8; totalTq <= 25; totalTq++)
+        {
+            var prescaler = (int)Math.Round(deviceClockHz / (requestedBitrate * totalTq));
+            if (prescaler <= 0) continue;
+
+            var tseg1 = (int)Math.Round(totalTq * setting.SamplePointPercent / 100d) - 1;
+            var tseg2 = totalTq - 1 - tseg1;
+            if (tseg1 <= 0 || tseg2 <= 0) continue;
+
+            var bitrate = deviceClockHz / (double)(prescaler * totalTq);
+            var samplePoint = (1d + tseg1) / totalTq * 100d;
+            var error = Math.Abs(bitrate - requestedBitrate) / requestedBitrate
+                + Math.Abs(samplePoint - setting.SamplePointPercent) / 10_000d;
+            if (error >= bestError) continue;
+
+            bestError = error;
+            best = new(prescaler, tseg1, tseg2, Math.Min(4, tseg2));
+        }
+
+        if (best is null)
+            throw new InvalidOperationException("The requested timing cannot be represented by the controller clock.");
+        return best;
+    }
+
+    public (int BitrateKbps, double SamplePointPercent) Describe(RawBitTimingSegments segments, int deviceClockHz)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(deviceClockHz);
+        segments.Validate();
+        var totalTq = 1 + segments.Tseg1 + segments.Tseg2;
+        var bitrateKbps = (int)Math.Round(deviceClockHz / (double)(segments.Prescaler * totalTq) / 1_000d);
+        var samplePoint = (1d + segments.Tseg1) / totalTq * 100d;
+        return (bitrateKbps, samplePoint);
+    }
+}
 
 public sealed class BitrateTableProvider : IBitrateTableProvider
 {

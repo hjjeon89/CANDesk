@@ -51,6 +51,10 @@
               BorderThickness="1"
               CornerRadius="6">
         <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
@@ -63,17 +67,41 @@
           <StackPanel Grid.Column="1" Orientation="Horizontal">
             <ComboBox Width="170" ItemsSource="{Binding NominalPresets}" SelectedItem="{Binding SelectedNominalTiming}" />
             <ToggleButton Content="Custom" IsChecked="{Binding UseCustomNominalTiming}" Margin="6,0,0,0" />
-            <TextBox Width="64" Margin="6,0,0,0" Text="{Binding CustomNominalBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomNominalTiming}" ToolTip="Nominal bitrate (kbps)" />
-            <TextBox Width="52" Margin="4,0,0,0" Text="{Binding CustomNominalSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomNominalTiming}" ToolTip="Nominal sample point (%)" />
+            <TextBox Width="60" Margin="6,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding CustomNominalBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomNominalTiming}" ToolTip="Nominal bitrate (kbps)" />
+            <TextBox Width="52" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding CustomNominalSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomNominalTiming}" ToolTip="Nominal sample point (%)" />
+            <ToggleButton Content="Advanced" IsChecked="{Binding UseRawNominalTiming}" Margin="6,0,0,0" ToolTip="Enter BRP, TSeg1, TSeg2, and SJW directly" />
           </StackPanel>
           <Border Grid.Column="2" Style="{StaticResource ToolbarSeparatorStyle}" />
           <TextBlock Grid.Column="3" Text="DATA PHASE (CAN FD)" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="{Binding IsFdMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <StackPanel Grid.Column="4" Orientation="Horizontal" Visibility="{Binding IsFdMode, Converter={StaticResource BooleanToVisibilityConverter}}">
             <ComboBox Width="170" ItemsSource="{Binding DataPresets}" SelectedItem="{Binding SelectedDataTiming}" />
             <ToggleButton Content="Custom" IsChecked="{Binding UseCustomDataTiming}" Margin="6,0,0,0" />
-            <TextBox Width="64" Margin="6,0,0,0" Text="{Binding CustomDataBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomDataTiming}" ToolTip="Data bitrate (kbps)" />
-            <TextBox Width="52" Margin="4,0,0,0" Text="{Binding CustomDataSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomDataTiming}" ToolTip="Data sample point (%)" />
+            <TextBox Width="60" Margin="6,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding CustomDataBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomDataTiming}" ToolTip="Data bitrate (kbps)" />
+            <TextBox Width="52" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding CustomDataSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding UseCustomDataTiming}" ToolTip="Data sample point (%)" />
+            <ToggleButton Content="Advanced" IsChecked="{Binding UseRawDataTiming}" Margin="6,0,0,0" ToolTip="Enter BRP, TSeg1, TSeg2, and SJW directly" />
           </StackPanel>
+          <WrapPanel Grid.Row="1" Grid.Column="1" Margin="0,7,0,0" Visibility="{Binding UseRawNominalTiming, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <TextBlock Text="BRP" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding NominalPrescaler, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="TSEG1" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding NominalTseg1, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="TSEG2" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding NominalTseg2, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="SJW" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding NominalSjw, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="{Binding NominalRawDescription}" Foreground="{DynamicResource AccentBrush}" FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0" />
+          </WrapPanel>
+          <WrapPanel Grid.Row="1" Grid.Column="4" Margin="0,7,0,0" Visibility="{Binding UseRawDataTiming, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <TextBlock Text="BRP" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding DataPrescaler, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="TSEG1" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding DataTseg1, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="TSEG2" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding DataTseg2, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="SJW" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="7,0,0,0" />
+            <TextBox Width="44" Margin="4,0,0,0" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding DataSjw, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="{Binding DataRawDescription}" Foreground="{DynamicResource AccentBrush}" FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0" />
+          </WrapPanel>
         </Grid>
       </Border>
     </Grid>

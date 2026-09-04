@@ -14,6 +14,7 @@ public partial class App : Application
         _host = Host.CreateDefaultBuilder().ConfigureServices(services =>
         {
             services.AddSingleton<CANDesk.Hal.IBitrateTableProvider, CANDesk.Hal.BitrateTableProvider>();
+            services.AddSingleton<CANDesk.Hal.IBitTimingCalculator, CANDesk.Hal.BitTimingCalculator>();
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Mock.MockCanDeviceFactory>();
             services.AddSingleton<DeviceConnectionService>();
             services.AddSingleton<DeviceConnectionViewModel>();

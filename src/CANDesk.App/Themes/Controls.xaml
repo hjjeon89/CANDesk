@@ -113,6 +113,13 @@
     </Setter>
   </Style>
 
+  <!-- Narrow numeric fields (bitrate/sample-point/BRP/TSeg/SJW): the default 8,5 padding
+       leaves almost no room for text once the box is under ~60px wide. -->
+  <Style x:Key="CompactNumberBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Setter Property="Padding" Value="4,4"/>
+    <Setter Property="TextAlignment" Value="Center"/>
+  </Style>
+
   <!-- Pill badges: CAN ID / direction chips -->
   <Style x:Key="IdBadgeStyle" TargetType="Border">
     <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
