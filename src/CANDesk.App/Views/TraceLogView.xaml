@@ -2,8 +2,17 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid Margin="8,6">
-    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="150" /></Grid.RowDefinitions>
-    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="150" /></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,8">
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+        <Button Content="▶ Start" Command="{Binding StartCommand}" ToolTip="Resume recording frames into the trace" />
+        <Button Content="❚❚ Pause" Command="{Binding PauseCommand}" Margin="5,0,0,0" ToolTip="Stop appending new frames, keep what's recorded" />
+        <Button Content="■ Stop" Command="{Binding StopCommand}" Margin="5,0,0,0" ToolTip="End the recording session" />
+        <TextBlock Text="{Binding CaptureStatusText}" Foreground="{Binding CaptureStatusBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" />
+      </StackPanel>
+      <Button DockPanel.Dock="Right" Content="Export..." Width="96" Command="{Binding DataContext.ExportTraceCommand, RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Export the recorded trace to a CSV file" />
+    </DockPanel>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
       <TextBlock Text="FILTER" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="0,0,8,0" />
       <Border Style="{StaticResource SearchBoxContainerStyle}" Width="150">
         <TextBox Style="{StaticResource SearchTextBoxStyle}" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" ToolTip="CAN ID, e.g. 0x100" />
@@ -12,7 +21,7 @@
       <CheckBox Content="Show TX" IsChecked="{Binding ShowTx}" VerticalAlignment="Center" Margin="12,0,0,0" />
       <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{DynamicResource FailBrush}" />
     </StackPanel>
-    <Border Grid.Row="1" Style="{StaticResource PanelCardStyle}">
+    <Border Grid.Row="2" Style="{StaticResource PanelCardStyle}">
       <DataGrid ItemsSource="{Binding FramesView}" SelectedItem="{Binding SelectedFrame}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" BorderThickness="0" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
         <DataGrid.Columns>
           <DataGridTextColumn Header="No" Binding="{Binding Index}" Width="50" />
@@ -48,7 +57,7 @@
         </DataGrid.Columns>
       </DataGrid>
     </Border>
-    <Border Grid.Row="2" Margin="0,8,0,0" Style="{StaticResource PanelCardStyle}" Padding="10">
+    <Border Grid.Row="3" Margin="0,8,0,0" Style="{StaticResource PanelCardStyle}" Padding="10">
       <StackPanel>
         <DockPanel>
           <TextBlock Text="Selected Frame Byte Inspector" Foreground="{DynamicResource TextSubBrush}" FontWeight="SemiBold" FontSize="11" />

@@ -13,6 +13,7 @@
           <MenuItem Header="_File">
             <MenuItem Header="New Message Database" Command="{Binding NewMessageDatabaseCommand}" />
             <MenuItem Header="Open Database..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Save Message Database..." Command="{Binding MessageDbEditor.SaveCommand}" />
             <Separator />
             <MenuItem Header="Export Trace..." Command="{Binding ExportTraceCommand}" />
             <Separator />
@@ -36,7 +37,7 @@
           </MenuItem>
           <MenuItem Header="_Tools">
             <MenuItem Header="Load DBC..." Command="{Binding OpenDatabaseCommand}" />
-            <MenuItem Header="Message DB Editor" Command="{Binding ShowMessageDatabaseCommand}" />
+            <MenuItem Header="Message DB Editor" Command="{Binding OpenMessageEditorCommand}" />
             <MenuItem Header="Settings" />
           </MenuItem>
           <MenuItem Header="_Help">
@@ -51,7 +52,6 @@
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="320" />
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="360" />
       </Grid.ColumnDefinitions>
       <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
         <TabControl Background="{DynamicResource PanelBrush}" BorderThickness="0" SelectedIndex="{Binding SelectedLeftTabIndex}">
@@ -71,11 +71,13 @@
           <TabItem Header="Message Monitor">
             <views:MessageMonitorView DataContext="{Binding Monitor}" />
           </TabItem>
+          <TabItem Header="Transmit">
+            <views:TransmitPanelView DataContext="{Binding TransmitPanel}" />
+          </TabItem>
           <TabItem Header="Signal Plot" />
           <TabItem Header="Diagnostics" />
         </TabControl>
       </Border>
-      <views:TransmitPanelView Grid.Column="2" DataContext="{Binding TransmitPanel}" />
     </Grid>
     <Border Grid.Row="3" Background="{DynamicResource SurfaceBrush}" Padding="12,0">
       <DockPanel>

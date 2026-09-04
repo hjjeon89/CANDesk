@@ -8,6 +8,8 @@ public sealed record DbcSignal(string Name, int StartBit, int BitLength, ByteOrd
     double Factor = 1, double Offset = 0, double? Minimum = null, double? Maximum = null, string? Unit = null,
     MultiplexorRole MultiplexorRole = MultiplexorRole.None, int? MultiplexValue = null);
 public sealed record DbcMessage(uint CanId, string Name, byte Dlc, IReadOnlyList<DbcSignal> Signals, bool IsExtended = false);
+public sealed record CanNode(string Name);
+public sealed record MessageNodeAssignment(string? TransmitterNode, IReadOnlySet<string> ReceiverNodes);
 public sealed record DecodedSignal(uint CanId, string MessageName, string SignalName, double RawValue, double PhysicalValue,
     string? Unit, DateTime SystemTime);
 

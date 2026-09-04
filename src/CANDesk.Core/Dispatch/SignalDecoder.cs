@@ -38,7 +38,8 @@ public sealed class SignalDecoder(IMessageDatabase database)
     }
 
     // DBC Motorola numbering walks down within a byte, then continues at the next byte's MSB.
-    private static int MotorolaBit(int startBit, int offset)
+    // Shared with SignalEncoder so encode/decode bit placement can never drift apart.
+    internal static int MotorolaBit(int startBit, int offset)
     {
         var bit = startBit;
         for (var index = 0; index < offset; index++) bit = bit % 8 == 0 ? bit + 15 : bit - 1;

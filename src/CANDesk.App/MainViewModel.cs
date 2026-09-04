@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly DeviceConnectionService _connection;
     private RxDispatcher _dispatcher;
     private ITxScheduler? _txScheduler;
+    public event EventHandler? MessageEditorRequested;
     public ObservableCollection<TraceFrameRow> Frames { get; } = [];
     public ICollectionView TraceFramesView { get; }
     public MessageMonitorViewModel Monitor { get; } = new();
@@ -43,10 +44,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _signalSearch = string.Empty;
     [ObservableProperty] private string _traceFilterText = string.Empty;
     [ObservableProperty] private TraceFrameRow _selectedFrame = TraceFrameRow.Empty;
-    [ObservableProperty] private int _selectedCenterTabIndex;
+    // Message Monitor (index 1) is the default landing tab; Trace is opt-in via the tab strip.
+    [ObservableProperty] private int _selectedCenterTabIndex = 1;
     [ObservableProperty] private int _selectedLeftTabIndex;
-    public bool IsTraceLogVisible => SelectedCenterTabIndex == 0;
-    public bool IsMessageMonitorVisible => SelectedCenterTabIndex == 1;
     public string CaptureCommandText => IsCapturing ? "Pause" : "Start";
     public DeviceConnectionViewModel Connection { get; }
     public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {Connection.SelectedNominalTiming}" : "Disconnected";
@@ -76,6 +76,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _dispatcher = CreateDispatcher();
         TraceFramesView = CollectionViewSource.GetDefaultView(Frames);
         TraceFramesView.Filter = MatchesTraceFilter;
+        DbcSignalTree.SendToTransmitRequested += message =>
+        {
+            TransmitPanel.AddJobFromMessage(message);
+            SelectedCenterTabIndex = 2;
+        };
+        TransmitPanel.SetNodeEmulationProviders(
+            () => MessageDbEditor.Nodes.Select(node => node.Name).ToArray(),
+            nodeName => MessageDbEditor.GetTransmitMessages(nodeName));
+        MessageDbEditor.NodesChanged += (_, _) => TransmitPanel.RefreshEmulatedNodes();
     }
     public async Task AttachCurrentDeviceAsync(CancellationToken cancellationToken = default)
     {
@@ -106,12 +115,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnIsCapturingChanged(bool value) => OnPropertyChanged(nameof(CaptureCommandText));
 
-    partial void OnSelectedCenterTabIndexChanged(int value)
-    {
-        OnPropertyChanged(nameof(IsTraceLogVisible));
-        OnPropertyChanged(nameof(IsMessageMonitorVisible));
-    }
-
     [RelayCommand]
     private void NewMessageDatabase()
     {
@@ -122,6 +125,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [RelayCommand]
     private void ShowMessageDatabase() => SelectedLeftTabIndex = 1;
+
+    [RelayCommand]
+    private void OpenMessageEditor() => MessageEditorRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
     private void UndoMessageEdit()
@@ -291,7 +297,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 }
 
-public sealed record MessageTreeItem(string Id, string Name, string Meta, IReadOnlyList<SignalTreeItem> Signals);
+public sealed record MessageTreeItem(string Id, string Name, string Meta, IReadOnlyList<SignalTreeItem> Signals, DbcMessage? Source = null);
 public sealed record SignalTreeItem(string Name, string Value);
 public sealed partial class TxJobRow : ObservableObject
 {
@@ -312,10 +318,64 @@ public sealed partial class TxJobRow : ObservableObject
     public string Period { get; }
     public string Dlc { get; }
 
+    /// <summary>The DBC message this job was created from, if any. Null for freeform hex-only jobs.</summary>
+    public DbcMessage? Message { get; init; }
+
+    /// <summary>Editable per-signal values for <see cref="Message"/>; empty for freeform jobs.</summary>
+    public ObservableCollection<TxSignalEditRow> Signals { get; } = [];
+
     [ObservableProperty] private string _payload;
     [ObservableProperty] private bool _isEnabled;
     [ObservableProperty] private bool _autoCounter;
     [ObservableProperty] private bool _e2eCrc;
+}
+
+/// <summary>
+/// Edits one signal's physical value for a <see cref="TxJobRow"/>. Changing the value re-encodes
+/// just that signal's bits into the job's hex payload via <see cref="CANDesk.Core.Dispatch.SignalEncoder"/>,
+/// leaving every other byte untouched so multiple signals in the same message compose correctly.
+/// </summary>
+public sealed partial class TxSignalEditRow : ObservableObject
+{
+    private readonly TxJobRow _job;
+    private readonly DbcSignal _signal;
+
+    public TxSignalEditRow(TxJobRow job, DbcSignal signal, double initialValue)
+    {
+        _job = job;
+        _signal = signal;
+        _valueText = initialValue.ToString("0.###");
+    }
+
+    public string DisplayName => string.IsNullOrEmpty(_signal.Unit) ? _signal.Name : $"{_signal.Name} ({_signal.Unit})";
+
+    [ObservableProperty] private string _valueText;
+
+    partial void OnValueTextChanged(string value)
+    {
+        if (!double.TryParse(value, out var physicalValue)) return;
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromHexString(_job.Payload.Replace(" ", string.Empty, StringComparison.Ordinal));
+        }
+        catch (FormatException)
+        {
+            return;
+        }
+
+        try
+        {
+            CANDesk.Core.Dispatch.SignalEncoder.Encode(bytes, _signal, physicalValue);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        _job.Payload = string.Join(' ', bytes.Select(b => b.ToString("X2")));
+    }
 }
 public sealed record TraceFrameRow(long Index, DateTime Time, string Id, string Direction, byte Dlc, string Data, string Summary, IReadOnlyList<string> Bytes)
 {

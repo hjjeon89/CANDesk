@@ -15,6 +15,10 @@
             </Border>
             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
             <TextBlock Text="{Binding Meta, StringFormat=' · {0}'}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0" />
+            <Button Content="+ TX" Margin="10,0,0,0" Padding="6,1" FontSize="10"
+                    ToolTip="Create a Transmit job from this message"
+                    Command="{Binding DataContext.SendToTransmitCommand, RelativeSource={RelativeSource AncestorType=TreeView}}"
+                    CommandParameter="{Binding}" />
           </StackPanel>
           <HierarchicalDataTemplate.ItemTemplate>
             <DataTemplate>
