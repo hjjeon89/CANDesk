@@ -6,6 +6,8 @@ namespace CANDesk.App;
 public partial class App : Application
 {
     private IHost? _host;
+    private MainViewModel? _mainViewModel;
+    private DeviceConnectionService? _connection;
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -19,15 +21,45 @@ public partial class App : Application
             services.AddSingleton<MainWindow>();
         }).Build();
         await _host.StartAsync();
-        var connection = _host.Services.GetRequiredService<DeviceConnectionService>();
+        _connection = _host.Services.GetRequiredService<DeviceConnectionService>();
         var connectionViewModel = _host.Services.GetRequiredService<DeviceConnectionViewModel>();
-        await connection.ConnectMockAsync(connectionViewModel.BuildConfiguration());
-        await _host.Services.GetRequiredService<MainViewModel>().AttachCurrentDeviceAsync();
+        await _connection.ConnectMockAsync(connectionViewModel.BuildConfiguration());
+        _mainViewModel = _host.Services.GetRequiredService<MainViewModel>();
+        await _mainViewModel.AttachCurrentDeviceAsync();
         _host.Services.GetRequiredService<MainWindow>().Show();
     }
-    protected override async void OnExit(ExitEventArgs e)
+
+    protected override void OnExit(ExitEventArgs e)
     {
-        if (_host is not null) { await _host.StopAsync(); _host.Dispose(); }
-        base.OnExit(e);
+        try
+        {
+            ShutdownAsync().GetAwaiter().GetResult();
+        }
+        finally
+        {
+            base.OnExit(e);
+        }
+    }
+
+    private async Task ShutdownAsync()
+    {
+        if (_mainViewModel is not null)
+        {
+            await _mainViewModel.DisposeAsync().ConfigureAwait(false);
+            _mainViewModel = null;
+        }
+
+        if (_connection is not null)
+        {
+            await _connection.DisconnectAsync().ConfigureAwait(false);
+            _connection = null;
+        }
+
+        if (_host is not null)
+        {
+            await _host.StopAsync().ConfigureAwait(false);
+            _host.Dispose();
+            _host = null;
+        }
     }
 }

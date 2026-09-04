@@ -11,16 +11,16 @@
         <TextBlock DockPanel.Dock="Left" Text="CANDesk" VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" FontSize="13" Margin="0,0,16,0" />
         <Menu VerticalAlignment="Center">
           <MenuItem Header="_File">
-            <MenuItem Header="New Message Database" />
-            <MenuItem Header="Open Database..." />
+            <MenuItem Header="New Message Database" Command="{Binding NewMessageDatabaseCommand}" />
+            <MenuItem Header="Open Database..." Command="{Binding OpenDatabaseCommand}" />
             <Separator />
-            <MenuItem Header="Export Trace..." />
+            <MenuItem Header="Export Trace..." Command="{Binding ExportTraceCommand}" />
             <Separator />
             <MenuItem Header="E_xit" Command="ApplicationCommands.Close" />
           </MenuItem>
           <MenuItem Header="_Edit">
-            <MenuItem Header="Undo" Command="ApplicationCommands.Undo" />
-            <MenuItem Header="Redo" Command="ApplicationCommands.Redo" />
+            <MenuItem Header="Undo" Command="{Binding UndoMessageEditCommand}" />
+            <MenuItem Header="Redo" Command="{Binding RedoMessageEditCommand}" />
             <Separator />
             <MenuItem Header="Clear Trace" Command="{Binding ClearTraceCommand}" />
           </MenuItem>
@@ -31,12 +31,12 @@
           </MenuItem>
           <MenuItem Header="_Hardware">
             <MenuItem Header="Connect" Command="{Binding ConnectCommand}" />
-            <MenuItem Header="Disconnect" />
-            <MenuItem Header="Reset Bus" />
+            <MenuItem Header="Disconnect" Command="{Binding DisconnectCommand}" />
+            <MenuItem Header="Reset Bus" Command="{Binding ResetBusCommand}" />
           </MenuItem>
           <MenuItem Header="_Tools">
-            <MenuItem Header="Load DBC / XML / CSV..." />
-            <MenuItem Header="Message DB Editor" />
+            <MenuItem Header="Load DBC..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Message DB Editor" Command="{Binding ShowMessageDatabaseCommand}" />
             <MenuItem Header="Settings" />
           </MenuItem>
           <MenuItem Header="_Help">
@@ -47,62 +47,6 @@
       </DockPanel>
     </Border>
     <views:DeviceConnectionView Grid.Row="1" DataContext="{Binding Connection}" />
-    <Border Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,7">
-      <Grid>
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
-          <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <DockPanel LastChildFill="False">
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-          <TextBlock Text="VENDOR" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Margin="0,0,6,0" />
-          <ComboBox Width="105" ItemsSource="{Binding Connection.Vendors}" SelectedItem="{Binding Connection.SelectedVendor}" VerticalAlignment="Center" />
-          <TextBlock Text="CHANNEL" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Margin="12,0,6,0" />
-          <ComboBox Width="150" ItemsSource="{Binding Connection.Channels}" SelectedItem="{Binding Connection.SelectedChannel}" VerticalAlignment="Center" />
-          <Border Width="1" Height="24" Background="{DynamicResource BorderBrush}" Margin="10,0" />
-          <ToggleButton Content="Classic CAN" IsChecked="{Binding Connection.IsClassicMode, Mode=TwoWay}" />
-          <ToggleButton Content="CAN FD" IsChecked="{Binding Connection.IsFdMode, Mode=TwoWay}" Margin="3,0,0,0" />
-          <Button Content="Connect" Command="{Binding ConnectCommand}" Margin="10,0,0,0" />
-          <Border Width="1" Height="24" Background="{DynamicResource BorderBrush}" Margin="10,0" />
-          <Button Content="▶ Start" Command="{Binding ToggleCaptureCommand}" />
-          <Button Content="■ Clear" Command="{Binding ClearTraceCommand}" Margin="5,0,0,0" />
-          <ToggleButton Content="↳ Auto Scroll" IsChecked="{Binding IsAutoScroll}" Margin="5,0,0,0" />
-        </StackPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-          <TextBlock Text="VIEW" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" FontWeight="Bold" Margin="0,0,6,0" />
-          <ToggleButton Content="Raw Hex" IsChecked="{Binding IsRawMode}" />
-          <ToggleButton Content="Msg / Signal" IsChecked="{Binding IsDecodedMode}" Margin="3,0,0,0" />
-          <Button Content="⌁ Load DBC" Margin="10,0,0,0" />
-        </StackPanel>
-        </DockPanel>
-        <Border Grid.Row="1" Margin="0,8,0,0" Padding="8,6" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderSubBrush}" BorderThickness="1" CornerRadius="6">
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="330" />
-              <ColumnDefinition Width="16" />
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="330" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="NOMINAL / ARBITRATION" Foreground="{DynamicResource TextSubBrush}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-              <ComboBox Width="170" ItemsSource="{Binding Connection.NominalPresets}" SelectedItem="{Binding Connection.SelectedNominalTiming}" VerticalAlignment="Center" />
-              <ToggleButton Content="Custom" IsChecked="{Binding Connection.UseCustomNominalTiming}" Margin="6,0,0,0" />
-              <TextBox Width="64" Margin="6,0,0,0" Text="{Binding Connection.CustomNominalBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Connection.UseCustomNominalTiming}" ToolTip="Nominal bitrate (kbps)" />
-              <TextBox Width="52" Margin="4,0,0,0" Text="{Binding Connection.CustomNominalSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Connection.UseCustomNominalTiming}" ToolTip="Nominal sample point (%)" />
-            </StackPanel>
-            <Border Grid.Column="2" Width="1" Background="{DynamicResource BorderBrush}" />
-            <TextBlock Grid.Column="3" Text="DATA PHASE (CAN FD)" Foreground="{DynamicResource TextSubBrush}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="{Binding Connection.IsFdMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
-            <StackPanel Grid.Column="4" Orientation="Horizontal" Visibility="{Binding Connection.IsFdMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-              <ComboBox Width="170" ItemsSource="{Binding Connection.DataPresets}" SelectedItem="{Binding Connection.SelectedDataTiming}" VerticalAlignment="Center" />
-              <ToggleButton Content="Custom" IsChecked="{Binding Connection.UseCustomDataTiming}" Margin="6,0,0,0" />
-              <TextBox Width="64" Margin="6,0,0,0" Text="{Binding Connection.CustomDataBitrateKbps, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Connection.UseCustomDataTiming}" ToolTip="Data bitrate (kbps)" />
-              <TextBox Width="52" Margin="4,0,0,0" Text="{Binding Connection.CustomDataSamplePoint, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Connection.UseCustomDataTiming}" ToolTip="Data sample point (%)" />
-            </StackPanel>
-          </Grid>
-        </Border>
-      </Grid>
-    </Border>
     <Grid Grid.Row="2" Background="{DynamicResource BorderBrush}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="320" />
@@ -110,169 +54,55 @@
         <ColumnDefinition Width="360" />
       </Grid.ColumnDefinitions>
       <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="34" />
-            <RowDefinition Height="*" />
-          </Grid.RowDefinitions>
-          <TabControl Background="{DynamicResource PanelBrush}" BorderThickness="0">
-            <TabItem Header="DBC Signal Tree">
-              <views:DbcSignalTreeView DataContext="{Binding DbcSignalTree}" />
-            </TabItem>
-            <TabItem Header="DB Editor">
-              <views:MessageDbEditorView DataContext="{Binding MessageDbEditor}" />
-            </TabItem>
-          </TabControl>
-          <StackPanel Grid.Row="1" Margin="8" Visibility="Collapsed">
-            <TextBox Text="{Binding DbcSignalTree.SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Signals / Messages..." />
-            <TreeView ItemsSource="{Binding DbcSignalTree.Messages}" Margin="0,8,0,0" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource TextMainBrush}">
-              <TreeView.ItemTemplate>
-                <HierarchicalDataTemplate ItemsSource="{Binding Signals}">
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding Id}" Foreground="{DynamicResource AccentBrush}" FontFamily="Consolas" />
-                    <TextBlock Text="  {Binding Name}" />
-                    <TextBlock Text="  {Binding Meta}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" />
-                  </StackPanel>
-                  <HierarchicalDataTemplate.ItemTemplate>
-                    <DataTemplate>
-                      <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="↳ " Foreground="{DynamicResource MutedTextBrush}" />
-                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSubBrush}" />
-                        <TextBlock Text="  {Binding Value}" Foreground="{DynamicResource PassBrush}" FontFamily="Consolas" />
-                      </StackPanel>
-                    </DataTemplate>
-                  </HierarchicalDataTemplate.ItemTemplate>
-                </HierarchicalDataTemplate>
-              </TreeView.ItemTemplate>
-            </TreeView>
-          </StackPanel>
-        </Grid>
+        <TabControl Background="{DynamicResource PanelBrush}" BorderThickness="0" SelectedIndex="{Binding SelectedLeftTabIndex}">
+          <TabItem Header="DBC Signal Tree">
+            <views:DbcSignalTreeView DataContext="{Binding DbcSignalTree}" />
+          </TabItem>
+          <TabItem Header="DB Editor">
+            <views:MessageDbEditorView DataContext="{Binding MessageDbEditor}" />
+          </TabItem>
+        </TabControl>
       </Border>
       <Border Grid.Column="1" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="34" />
-            <RowDefinition Height="38" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="150" />
-          </Grid.RowDefinitions>
-          <TabControl Background="{DynamicResource PanelBrush}" BorderThickness="0" SelectedIndex="{Binding SelectedCenterTabIndex}">
-            <TabItem Header="Trace Monitor" />
-            <TabItem Header="Message Monitor" />
-            <TabItem Header="Signal Plot" />
-            <TabItem Header="Diagnostics" />
-          </TabControl>
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,6" Visibility="Collapsed">
-            <TextBlock Text="FILTER" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" FontWeight="Bold" Margin="0,0,8,0" />
-            <TextBox Width="145" Text="{Binding TraceFilterText}" ToolTip="ID (e.g. 0x100)" />
-            <CheckBox Content="Show RX" IsChecked="{Binding ShowRx}" Foreground="{DynamicResource TextSubBrush}" Margin="12,0,0,0" />
-            <CheckBox Content="Show TX" IsChecked="{Binding ShowTx}" Foreground="{DynamicResource TextSubBrush}" Margin="10,0,0,0" />
-            <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" Foreground="#D14343" Margin="10,0,0,0" />
-          </StackPanel>
-          <DataGrid Grid.Row="2" ItemsSource="{Binding TraceFramesView}" SelectedItem="{Binding SelectedFrame}" Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextMainBrush}" BorderThickness="0" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" Visibility="Collapsed">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="No" Binding="{Binding Index}" Width="50" />
-              <DataGridTextColumn Header="Time (s)" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100" />
-              <DataGridTextColumn Header="CAN ID" Binding="{Binding Id}" Width="80" />
-              <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="55" />
-              <DataGridTextColumn Header="DLC" Binding="{Binding Dlc}" Width="45" />
-              <DataGridTextColumn Header="Payload (Hex)" Binding="{Binding Data}" Width="220" />
-              <DataGridTextColumn Header="Decoded Summary / Signals" Binding="{Binding Summary}" Width="*" />
-            </DataGrid.Columns>
-          </DataGrid>
-          <Border Grid.Row="3" Background="{DynamicResource PanelSubBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Visibility="Collapsed">
-            <Grid Margin="10">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="26" />
-                <RowDefinition Height="40" />
-                <RowDefinition Height="*" />
-              </Grid.RowDefinitions>
-              <DockPanel>
-                <TextBlock Text="Selected Frame Byte Inspector &amp; Signal Breakdown" Foreground="{DynamicResource TextSubBrush}" FontWeight="SemiBold" />
-                <TextBlock DockPanel.Dock="Right" Text="{Binding SelectedFrame.Id}" Foreground="{DynamicResource AccentBrush}" FontFamily="Consolas" />
-              </DockPanel>
-              <ItemsControl Grid.Row="1" ItemsSource="{Binding SelectedFrame.Bytes}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <StackPanel Orientation="Horizontal" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,5,0" Padding="7,4">
-                      <TextBlock Text="{Binding}" FontFamily="Consolas" Foreground="{DynamicResource AccentBrush}" />
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-              <TextBlock Grid.Row="2" Text="{Binding SelectedFrame.Summary}" Foreground="{DynamicResource PassBrush}" FontFamily="Consolas" />
-            </Grid>
-          </Border>
-          <views:TraceLogView Grid.Row="1" Grid.RowSpan="3" DataContext="{Binding TraceLog}" Visibility="{Binding IsTraceLogVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
-          <views:MessageMonitorView Grid.Row="1" Grid.RowSpan="3" DataContext="{Binding Monitor}" Visibility="{Binding IsMessageMonitorVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        </Grid>
+        <TabControl Background="{DynamicResource PanelBrush}" BorderThickness="0" SelectedIndex="{Binding SelectedCenterTabIndex}">
+          <TabItem Header="Trace Monitor">
+            <views:TraceLogView DataContext="{Binding TraceLog}" />
+          </TabItem>
+          <TabItem Header="Message Monitor">
+            <views:MessageMonitorView DataContext="{Binding Monitor}" />
+          </TabItem>
+          <TabItem Header="Signal Plot" />
+          <TabItem Header="Diagnostics" />
+        </TabControl>
       </Border>
       <views:TransmitPanelView Grid.Column="2" DataContext="{Binding TransmitPanel}" />
-      <Border Grid.Column="2" Visibility="Collapsed" Background="{DynamicResource SurfaceBrush}">
-        <Grid>
-          <Grid.RowDefinitions>
-            <RowDefinition Height="34" />
-            <RowDefinition Height="*" />
-          </Grid.RowDefinitions>
-          <Border Background="{DynamicResource PanelBrush}" Padding="8,0">
-            <DockPanel>
-              <TextBlock Text="Transmit Engine" FontWeight="SemiBold" />
-              <Button DockPanel.Dock="Right" Content="+ Add TX" Padding="7,2" Command="{Binding TransmitPanel.AddJobCommand}" />
-            </DockPanel>
-          </Border>
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding TransmitPanel.Jobs}" Margin="8">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,8">
-                    <StackPanel>
-                      <DockPanel>
-                        <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Id}" Foreground="{DynamicResource WarningBrush}" FontFamily="Consolas" FontWeight="Bold" Margin="7,0" />
-                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                        <Button DockPanel.Dock="Right" Content="Send Now" Padding="7,2" />
-                      </DockPanel>
-                      <UniformGrid Columns="2" Margin="0,9,0,7">
-                        <StackPanel>
-                          <TextBlock Text="CYCLE PERIOD" Foreground="{DynamicResource MutedTextBrush}" FontSize="9" />
-                          <TextBlock Text="{Binding Period}" FontFamily="Consolas" />
-                        </StackPanel>
-                        <StackPanel>
-                          <TextBlock Text="DLC (BYTES)" Foreground="{DynamicResource MutedTextBrush}" FontSize="9" />
-                          <TextBlock Text="{Binding Dlc}" FontFamily="Consolas" />
-                        </StackPanel>
-                      </UniformGrid>
-                      <TextBlock Text="PAYLOAD (HEX)" Foreground="{DynamicResource MutedTextBrush}" FontSize="9" />
-                      <TextBox Text="{Binding Payload}" Margin="0,3,0,8" FontFamily="Consolas" />
-                      <StackPanel Orientation="Horizontal">
-                        <CheckBox Content="Auto Counter" IsChecked="{Binding AutoCounter}" Foreground="{DynamicResource TextSubBrush}" />
-                        <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Foreground="{DynamicResource TextSubBrush}" Margin="12,0,0,0" />
-                      </StackPanel>
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </ScrollViewer>
-        </Grid>
-      </Border>
     </Grid>
     <Border Grid.Row="3" Background="{DynamicResource SurfaceBrush}" Padding="12,0">
       <DockPanel>
-        <StackPanel Orientation="Horizontal">
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource PassBrush}" Margin="0,0,6,0" />
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Ellipse Width="7" Height="7" Fill="{Binding BusStatusBrush}" Margin="0,0,6,0">
+            <Ellipse.Effect>
+              <DropShadowEffect Color="{Binding BusStatusBrush.Color}" BlurRadius="8" ShadowDepth="0" Opacity="0.9" />
+            </Ellipse.Effect>
+          </Ellipse>
           <TextBlock Text="{Binding DeviceStatusText}" Foreground="{DynamicResource TextSubBrush}" />
           <TextBlock Text="  |  Bus: " Foreground="{DynamicResource MutedTextBrush}" Margin="14,0,0,0" />
-        <TextBlock Text="{Binding BusStatusText}" Foreground="{Binding BusStatusBrush}" />
-        <TextBlock Text="  |  Bus Load: 14.8%" Foreground="{DynamicResource TextSubBrush}" Margin="14,0,0,0" />
-        <TextBlock Text="{Binding LastDeviceError}" Foreground="{DynamicResource FailBrush}" Margin="14,0,0,0" />
+          <TextBlock Text="{Binding BusStatusText}" Foreground="{Binding BusStatusBrush}" />
+          <TextBlock Text="  |  Bus Load:" Foreground="{DynamicResource MutedTextBrush}" Margin="14,0,4,0" />
+          <Border Width="60" Height="6" CornerRadius="3" Background="{DynamicResource PanelDarkerBrush}" VerticalAlignment="Center">
+            <Border Width="9" HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource AccentBrush}" />
+          </Border>
+          <TextBlock Text="14.8%" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" Margin="4,0,0,0" />
+          <TextBlock Text="{Binding LastDeviceError}" Foreground="{DynamicResource FailBrush}" Margin="14,0,0,0" />
         </StackPanel>
-        <TextBlock DockPanel.Dock="Right" Text="RX: {Binding RxRate} fps    TX: {Binding TxRate} fps    Dropped: {Binding DroppedFrameCount}" Foreground="{DynamicResource TextSubBrush}" />
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="RX: " Foreground="{DynamicResource TextSubBrush}" />
+          <TextBlock Text="{Binding RxRate}" Foreground="{DynamicResource TextSubBrush}" />
+          <TextBlock Text=" fps    TX: " Foreground="{DynamicResource TextSubBrush}" />
+          <TextBlock Text="{Binding TxRate}" Foreground="{DynamicResource TextSubBrush}" />
+          <TextBlock Text=" fps    Dropped: " Foreground="{DynamicResource TextSubBrush}" />
+          <TextBlock Text="{Binding DroppedFrameCount}" Foreground="{Binding DroppedFrameBrush}" FontWeight="SemiBold" />
+        </StackPanel>
       </DockPanel>
     </Border>
   </Grid>

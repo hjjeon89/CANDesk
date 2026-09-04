@@ -10,31 +10,39 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
-      <DockPanel LastChildFill="False">
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-          <TextBlock Text="VENDOR" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0" />
-          <ComboBox Width="105" ItemsSource="{Binding Vendors}" SelectedItem="{Binding SelectedVendor}" />
-          <TextBlock Text="CHANNEL" Style="{StaticResource CaptionTextStyle}" Margin="12,0,6,0" />
-          <ComboBox Width="150" ItemsSource="{Binding Channels}" SelectedItem="{Binding SelectedChannel}" />
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="VENDOR" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0" VerticalAlignment="Center" />
+          <ComboBox Width="105" ItemsSource="{Binding Vendors}" SelectedItem="{Binding SelectedVendor}" VerticalAlignment="Center" />
+          <TextBlock Text="CHANNEL" Style="{StaticResource CaptionTextStyle}" Margin="12,0,6,0" VerticalAlignment="Center" />
+          <ComboBox Width="150" ItemsSource="{Binding Channels}" SelectedItem="{Binding SelectedChannel}" VerticalAlignment="Center" />
           <Border Style="{StaticResource ToolbarSeparatorStyle}" />
-          <ToggleButton Content="Classic CAN" IsChecked="{Binding IsClassicMode, Mode=TwoWay}" />
-          <ToggleButton Content="CAN FD" IsChecked="{Binding IsFdMode, Mode=TwoWay}" Margin="3,0,0,0" />
-          <Button Content="Connect"
+          <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="2">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton Content="Classic CAN" IsChecked="{Binding IsClassicMode, Mode=TwoWay}" BorderThickness="0" Background="Transparent" />
+              <ToggleButton Content="CAN FD" IsChecked="{Binding IsFdMode, Mode=TwoWay}" BorderThickness="0" Background="Transparent" Margin="2,0,0,0" />
+            </StackPanel>
+          </Border>
+          <Button Content="⚡ Connect"
                   Command="{Binding DataContext.ConnectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                   Style="{StaticResource PrimaryButtonStyle}"
                   Margin="10,0,0,0" />
         </StackPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-          <Button Content="Start / Pause"
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
+          <Button Content="{Binding DataContext.CaptureCommandText, RelativeSource={RelativeSource AncestorType=Window}}"
                   Command="{Binding DataContext.ToggleCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-          <Button Content="Clear"
+          <Button Content="⟲ Clear"
                   Command="{Binding DataContext.ClearTraceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                   Margin="5,0,0,0" />
-          <ToggleButton Content="Auto Scroll"
+          <ToggleButton Content="⚡ Auto Scroll"
                         IsChecked="{Binding DataContext.IsAutoScroll, RelativeSource={RelativeSource AncestorType=Window}}"
                         Margin="5,0,0,0" />
         </StackPanel>
-      </DockPanel>
+      </Grid>
       <Border Grid.Row="1"
               Margin="0,8,0,0"
               Padding="8,6"
@@ -45,10 +53,11 @@
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="330" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="16" />
             <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="330" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <TextBlock Text="NOMINAL / ARBITRATION" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="0,0,10,0" />
           <StackPanel Grid.Column="1" Orientation="Horizontal">

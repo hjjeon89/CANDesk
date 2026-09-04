@@ -15,20 +15,22 @@ public sealed class DeviceConnectionService(IEnumerable<ICanDeviceFactory> facto
     public async Task ConnectMockAsync(CanBusConfig? configuration = null, CancellationToken cancellationToken = default)
     {
         var factory = factories.Single(factory => factory.Vendor == "Mock");
-        await ConnectAsync(factory, "mock-0", "Mock Channel 0", configuration ?? new(500_000), cancellationToken);
+        await ConnectAsync(factory, "mock-0", "Mock Channel 0", configuration ?? new(500_000), cancellationToken).ConfigureAwait(false);
     }
     public async Task ConnectAsync(ICanDeviceFactory factory, string deviceId, string channelName, CanBusConfig configuration, CancellationToken cancellationToken = default)
     {
         configuration.Validate();
-        await DisconnectAsync(cancellationToken);
-        var device = await factory.CreateAsync(deviceId, channelName, cancellationToken);
-        try { await device.OpenAsync(configuration, cancellationToken); CurrentDevice = device; }
-        catch { await device.DisposeAsync(); throw; }
+        await DisconnectAsync(cancellationToken).ConfigureAwait(false);
+        var device = await factory.CreateAsync(deviceId, channelName, cancellationToken).ConfigureAwait(false);
+        try { await device.OpenAsync(configuration, cancellationToken).ConfigureAwait(false); CurrentDevice = device; }
+        catch { await device.DisposeAsync().ConfigureAwait(false); throw; }
     }
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         if (CurrentDevice is null) return;
-        await CurrentDevice.CloseAsync(cancellationToken); await CurrentDevice.DisposeAsync(); CurrentDevice = null;
+        await CurrentDevice.CloseAsync(cancellationToken).ConfigureAwait(false);
+        await CurrentDevice.DisposeAsync().ConfigureAwait(false);
+        CurrentDevice = null;
     }
     public ValueTask DisposeAsync() => new(DisconnectAsync());
 }

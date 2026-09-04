@@ -5,10 +5,14 @@ using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CANDesk.Core.Dispatch;
+using CANDesk.Core.MessageDb;
+using CANDesk.Core.Scheduling;
 using CANDesk.Hal;
 using CANDesk.App.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
+using System.IO;
 
 namespace CANDesk.App;
 
@@ -16,6 +20,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly DeviceConnectionService _connection;
     private RxDispatcher _dispatcher;
+    private ITxScheduler? _txScheduler;
     public ObservableCollection<TraceFrameRow> Frames { get; } = [];
     public ICollectionView TraceFramesView { get; }
     public MessageMonitorViewModel Monitor { get; } = new();
@@ -39,8 +44,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _traceFilterText = string.Empty;
     [ObservableProperty] private TraceFrameRow _selectedFrame = TraceFrameRow.Empty;
     [ObservableProperty] private int _selectedCenterTabIndex;
+    [ObservableProperty] private int _selectedLeftTabIndex;
     public bool IsTraceLogVisible => SelectedCenterTabIndex == 0;
     public bool IsMessageMonitorVisible => SelectedCenterTabIndex == 1;
+    public string CaptureCommandText => IsCapturing ? "Pause" : "Start";
     public DeviceConnectionViewModel Connection { get; }
     public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {Connection.SelectedNominalTiming}" : "Disconnected";
     public string BusStatusText => Status switch
@@ -60,6 +67,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public string RxRate => "0";
     public string TxRate => "0";
     public long DroppedFrameCount => _dispatcher.DroppedFrameCount;
+    public Brush DroppedFrameBrush => DroppedFrameCount > 0 ? Brushes.Firebrick : Brushes.SlateGray;
 
     public MainViewModel(DeviceConnectionService connection, DeviceConnectionViewModel connectionViewModel)
     {
@@ -74,10 +82,136 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var device = _connection.CurrentDevice ?? throw new InvalidOperationException("No CAN device is connected.");
         device.StatusChanged += (_, args) => DispatchToUi(() => Status = args.Status.ToString());
         device.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"{args.Kind}: {args.Message}");
+        if (_txScheduler is not null)
+        {
+            await _txScheduler.DisposeAsync().ConfigureAwait(false);
+        }
+        var txScheduler = new TxScheduler(device);
+        _txScheduler = txScheduler;
+        txScheduler.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"TX 0x{args.Frame.Id:X3}: {args.Exception.Message}");
+        TransmitPanel.SetScheduler(txScheduler);
+        TransmitPanel.SetSendHandler(async frame =>
+        {
+            await txScheduler.SendOnceAsync(frame);
+            DispatchToUi(() =>
+            {
+                TraceLog.ProcessTransmittedFrame(frame);
+                Monitor.ProcessTransmittedFrame(frame);
+            });
+        });
         Status = device.Status.ToString(); OnPropertyChanged(nameof(DeviceStatusText));
         await _dispatcher.StartAsync(device.ReadFramesAsync(cancellationToken), cancellationToken);
     }
     [RelayCommand] private void ToggleCapture() => IsCapturing = !IsCapturing;
+
+    partial void OnIsCapturingChanged(bool value) => OnPropertyChanged(nameof(CaptureCommandText));
+
+    partial void OnSelectedCenterTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsTraceLogVisible));
+        OnPropertyChanged(nameof(IsMessageMonitorVisible));
+    }
+
+    [RelayCommand]
+    private void NewMessageDatabase()
+    {
+        MessageDbEditor.Clear();
+        SelectedLeftTabIndex = 1;
+        LastDeviceError = string.Empty;
+    }
+
+    [RelayCommand]
+    private void ShowMessageDatabase() => SelectedLeftTabIndex = 1;
+
+    [RelayCommand]
+    private void UndoMessageEdit()
+    {
+        SelectedLeftTabIndex = 1;
+        MessageDbEditor.UndoCommand.Execute(null);
+    }
+
+    [RelayCommand]
+    private void RedoMessageEdit()
+    {
+        SelectedLeftTabIndex = 1;
+        MessageDbEditor.RedoCommand.Execute(null);
+    }
+
+    [RelayCommand]
+    private async Task OpenDatabaseAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "CAN database (*.dbc)|*.dbc",
+            Title = "Open CAN Database"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(dialog.FileName);
+            var database = await new DbcParser().ParseAsync(stream);
+            DbcSignalTree.Load(database);
+            SelectedLeftTabIndex = 0;
+            LastDeviceError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            LastDeviceError = $"Database load failed: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportTraceAsync()
+    {
+        var dialog = new SaveFileDialog
+        {
+            Filter = "CSV file (*.csv)|*.csv",
+            FileName = "candesk-trace.csv",
+            Title = "Export Trace"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var lines = new List<string> { "Index,Timestamp,CanId,Direction,Dlc,Payload" };
+        lines.AddRange(TraceLog.Frames.Select(frame => string.Join(',', frame.Index, frame.Time.ToString("O"), frame.Id, frame.Direction, frame.Dlc, $"\"{frame.Data}\"")));
+        await File.WriteAllLinesAsync(dialog.FileName, lines);
+    }
+
+    [RelayCommand]
+    private async Task DisconnectAsync()
+    {
+        if (_txScheduler is not null)
+        {
+            await _txScheduler.DisposeAsync();
+            _txScheduler = null;
+        }
+        TransmitPanel.SetSendHandler(null);
+        TransmitPanel.SetScheduler(null);
+        await _dispatcher.DisposeAsync().ConfigureAwait(false);
+        _dispatcher = CreateDispatcher();
+        await _connection.DisconnectAsync();
+        Status = CanDeviceStatus.Closed.ToString();
+    }
+
+    [RelayCommand]
+    private async Task ResetBusAsync()
+    {
+        var device = _connection.CurrentDevice;
+        if (device is null)
+        {
+            LastDeviceError = "No CAN device is connected.";
+            return;
+        }
+
+        await device.ResetBusAsync();
+        LastDeviceError = string.Empty;
+    }
     [RelayCommand] private void ClearTrace()
     {
         TraceLog.Clear();
@@ -97,19 +231,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(BusStatusText));
         OnPropertyChanged(nameof(BusStatusBrush));
     }
-    private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames) => Application.Current.Dispatcher.BeginInvoke(() =>
+    private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames) => DispatchToUi(() =>
     {
         if (!IsCapturing) return;
         Monitor.ProcessFrames(frames);
         TraceLog.ProcessFrames(frames);
         OnPropertyChanged(nameof(DroppedFrameCount));
-    }, DispatcherPriority.Background);
-    public ValueTask DisposeAsync() => _dispatcher.DisposeAsync();
-
-    partial void OnSelectedCenterTabIndexChanged(int value)
+        OnPropertyChanged(nameof(DroppedFrameBrush));
+    });
+    public async ValueTask DisposeAsync()
     {
-        OnPropertyChanged(nameof(IsTraceLogVisible));
-        OnPropertyChanged(nameof(IsMessageMonitorVisible));
+        if (_txScheduler is not null)
+        {
+            await _txScheduler.DisposeAsync().ConfigureAwait(false);
+        }
+        await _dispatcher.DisposeAsync().ConfigureAwait(false);
     }
 
     partial void OnTraceFilterTextChanged(string value) => TraceFramesView.Refresh();
@@ -136,17 +272,50 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static void DispatchToUi(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) action();
-        else _ = dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+        if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+        try
+        {
+            _ = dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+        }
+        catch (InvalidOperationException) when (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+        }
     }
 }
 
 public sealed record MessageTreeItem(string Id, string Name, string Meta, IReadOnlyList<SignalTreeItem> Signals);
 public sealed record SignalTreeItem(string Name, string Value);
-public sealed class TxJobRow(string id, string name, string period, string dlc, string payload, bool isEnabled, bool autoCounter, bool e2eCrc)
+public sealed partial class TxJobRow : ObservableObject
 {
-    public string Id { get; } = id; public string Name { get; } = name; public string Period { get; } = period; public string Dlc { get; } = dlc;
-    public string Payload { get; set; } = payload; public bool IsEnabled { get; set; } = isEnabled; public bool AutoCounter { get; set; } = autoCounter; public bool E2eCrc { get; set; } = e2eCrc;
+    public TxJobRow(string id, string name, string period, string dlc, string payload, bool isEnabled, bool autoCounter, bool e2eCrc)
+    {
+        Id = id;
+        Name = name;
+        Period = period;
+        Dlc = dlc;
+        _payload = payload;
+        _isEnabled = isEnabled;
+        _autoCounter = autoCounter;
+        _e2eCrc = e2eCrc;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public string Period { get; }
+    public string Dlc { get; }
+
+    [ObservableProperty] private string _payload;
+    [ObservableProperty] private bool _isEnabled;
+    [ObservableProperty] private bool _autoCounter;
+    [ObservableProperty] private bool _e2eCrc;
 }
 public sealed record TraceFrameRow(long Index, DateTime Time, string Id, string Direction, byte Dlc, string Data, string Summary, IReadOnlyList<string> Bytes)
 {

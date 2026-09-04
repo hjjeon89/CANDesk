@@ -2,11 +2,11 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="34" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="40" /><RowDefinition Height="*" /></Grid.RowDefinitions>
     <Border Style="{StaticResource PanelHeaderStyle}">
       <DockPanel>
-        <TextBlock Text="Transmit Engine" FontWeight="SemiBold" />
-        <Button DockPanel.Dock="Right" Content="+ Add TX" Padding="7,2" Command="{Binding AddJobCommand}" />
+        <TextBlock Text="Transmit Engine" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button DockPanel.Dock="Right" Content="+ Add TX" Padding="5,2" Margin="1" Command="{Binding AddJobCommand}"/>
       </DockPanel>
     </Border>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -16,16 +16,35 @@
             <Border Style="{StaticResource PanelCardStyle}" Padding="10" Margin="0,0,0,8">
               <StackPanel>
                 <DockPanel>
-                  <CheckBox IsChecked="{Binding IsEnabled}" />
-                  <TextBlock Text="{Binding Id}" Foreground="{DynamicResource WarningBrush}" FontFamily="Consolas" FontWeight="Bold" Margin="7,0" />
-                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                  <Button DockPanel.Dock="Right" Content="Send Now" Padding="7,2" />
+                  <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" />
+                  <Border Style="{StaticResource IdBadgeStyle}" Background="{DynamicResource WarningSoftBrush}" Margin="7,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Id}" Style="{StaticResource IdBadgeTextStyle}" Foreground="{DynamicResource WarningBrush}" />
+                  </Border>
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="Cyclic" Padding="8,3" FontSize="11" Command="{Binding DataContext.ToggleCyclicCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                    <Button Content="Send Now" Style="{StaticResource PrimaryButtonStyle}" Padding="8,3" FontSize="11" Command="{Binding DataContext.SendNowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                  </StackPanel>
                 </DockPanel>
-                <TextBlock Text="{Binding Period}" Margin="0,7,0,2" Foreground="{DynamicResource TextSubBrush}" />
-                <TextBox Text="{Binding Payload}" FontFamily="Consolas" />
-                <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                <UniformGrid Columns="2" Margin="0,10,0,8">
+                  <StackPanel Margin="0,0,6,0">
+                    <TextBlock Text="CYCLE PERIOD" Style="{StaticResource CaptionTextStyle}" />
+                    <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,3,0,0">
+                      <TextBlock Text="{Binding Period}" FontFamily="{DynamicResource MonoFontFamily}" />
+                    </Border>
+                  </StackPanel>
+                  <StackPanel Margin="6,0,0,0">
+                    <TextBlock Text="DLC (BYTES)" Style="{StaticResource CaptionTextStyle}" />
+                    <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,3,0,0">
+                      <TextBlock Text="{Binding Dlc}" FontFamily="{DynamicResource MonoFontFamily}" />
+                    </Border>
+                  </StackPanel>
+                </UniformGrid>
+                <TextBlock Text="PAYLOAD (HEX)" Style="{StaticResource CaptionTextStyle}" />
+                <TextBox Text="{Binding Payload}" FontFamily="{DynamicResource MonoFontFamily}" Margin="0,3,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
                   <CheckBox Content="Auto Counter" IsChecked="{Binding AutoCounter}" />
-                  <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Margin="12,0,0,0" />
+                  <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Margin="14,0,0,0" />
                 </StackPanel>
               </StackPanel>
             </Border>
@@ -33,5 +52,6 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </ScrollViewer>
+    <TextBlock Grid.Row="1" Text="{Binding LastSendError}" Foreground="{DynamicResource FailBrush}" VerticalAlignment="Bottom" Margin="8" />
   </Grid>
 </UserControl>

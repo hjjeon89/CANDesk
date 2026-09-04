@@ -30,21 +30,36 @@ public sealed partial class TraceLogViewModel : ObservableObject
     {
         foreach (var frame in frames)
         {
-            var bytes = Convert.ToHexString(frame.PayloadSpan).Chunk(2).Select(static value => new string(value)).ToArray();
-            var direction = frame.Flags.HasFlag(CanFrameFlags.ErrorFrame) ? "ERR" : "RX";
-            var row = new TraceFrameRow(
-                Interlocked.Increment(ref _sequence),
-                frame.SystemTime,
-                $"0x{frame.Id:X3}",
-                direction,
-                frame.Dlc,
-                string.Join(" ", bytes),
-                "Raw frame",
-                bytes);
-            Frames.Add(row);
-            SelectedFrame = row;
+            Append(frame, frame.Flags.HasFlag(CanFrameFlags.ErrorFrame) ? "ERR" : "RX");
         }
 
+        TrimToCapacity();
+    }
+
+    public void ProcessTransmittedFrame(in CanFrame frame)
+    {
+        Append(frame, "TX");
+        TrimToCapacity();
+    }
+
+    private void Append(in CanFrame frame, string direction)
+    {
+        var bytes = Convert.ToHexString(frame.PayloadSpan).Chunk(2).Select(static value => new string(value)).ToArray();
+        var row = new TraceFrameRow(
+            Interlocked.Increment(ref _sequence),
+            frame.SystemTime,
+            $"0x{frame.Id:X3}",
+            direction,
+            frame.Dlc,
+            string.Join(" ", bytes),
+            "Raw frame",
+            bytes);
+        Frames.Add(row);
+        SelectedFrame = row;
+    }
+
+    private void TrimToCapacity()
+    {
         while (Frames.Count > 10_000)
         {
             Frames.RemoveAt(0);

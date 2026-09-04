@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <DockPanel Margin="8">
     <Button DockPanel.Dock="Top" Content="+ Add Message" Command="{Binding AddMessageCommand}" HorizontalAlignment="Left" />
-    <DataGrid Margin="0,8,0,0" ItemsSource="{Binding Messages}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True">
+    <DataGrid Margin="0,8,0,0" ItemsSource="{Binding Messages}" SelectedItem="{Binding SelectedMessage}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True">
       <DataGrid.Columns>
         <DataGridTextColumn Header="CAN ID" Binding="{Binding Id}" Width="90" />
         <DataGridTextColumn Header="Message" Binding="{Binding Name}" Width="*" />

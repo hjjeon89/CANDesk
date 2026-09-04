@@ -17,6 +17,9 @@
   <Color x:Key="PassColor">#FF059669</Color>
   <Color x:Key="WarningColor">#FFD97706</Color>
   <Color x:Key="FailColor">#FFDC2626</Color>
+  <Color x:Key="PassSoftColor">#1A059669</Color>
+  <Color x:Key="WarningSoftColor">#1AD97706</Color>
+  <Color x:Key="FailSoftColor">#1ADC2626</Color>
   <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
   <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
   <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}"/>
@@ -34,4 +37,7 @@
   <SolidColorBrush x:Key="PassBrush" Color="{StaticResource PassColor}"/>
   <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
   <SolidColorBrush x:Key="FailBrush" Color="{StaticResource FailColor}"/>
+  <SolidColorBrush x:Key="PassSoftBrush" Color="{StaticResource PassSoftColor}"/>
+  <SolidColorBrush x:Key="WarningSoftBrush" Color="{StaticResource WarningSoftColor}"/>
+  <SolidColorBrush x:Key="FailSoftBrush" Color="{StaticResource FailSoftColor}"/>
 </ResourceDictionary>

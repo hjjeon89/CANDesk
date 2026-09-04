@@ -82,7 +82,6 @@
       </Setter.Value>
     </Setter>
   </Style>
-  <Style TargetType="TabItem"><Setter Property="Padding" Value="13,7"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></Trigger></Style.Triggers></Style>
   <Style TargetType="Menu"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/></Style>
   <Style TargetType="MenuItem"><Setter Property="Padding" Value="10,6"/><Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/><Setter Property="Background" Value="Transparent"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/></Trigger></Style.Triggers></Style>
   <Style TargetType="DataGrid"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderSubBrush}"/><Setter Property="VerticalGridLinesBrush" Value="Transparent"/><Setter Property="RowHeaderWidth" Value="0"/></Style>
@@ -90,4 +89,205 @@
   <Style TargetType="DataGridRow"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource PanelSubBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/></Trigger></Style.Triggers></Style>
   <Style x:Key="PanelCardStyle" TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="ClipToBounds" Value="True"/></Style>
   <Style x:Key="PanelHeaderStyle" TargetType="Border"><Setter Property="Background" Value="{DynamicResource PanelHeaderBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderSubBrush}"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="Padding" Value="12,8"/></Style>
+
+  <FontFamily x:Key="MonoFontFamily">Cascadia Mono, Consolas, Courier New</FontFamily>
+
+  <!-- Search box: borderless TextBox inside a bordered pill -->
+  <Style x:Key="SearchBoxContainerStyle" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BackgroundBrush}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="Padding" Value="8,2"/>
+  </Style>
+  <Style x:Key="SearchTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Padding" Value="4,3"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <ScrollViewer x:Name="PART_ContentHost" Background="Transparent"/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Pill badges: CAN ID / direction chips -->
+  <Style x:Key="IdBadgeStyle" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+    <Setter Property="CornerRadius" Value="3"/>
+    <Setter Property="Padding" Value="5,1"/>
+  </Style>
+  <Style x:Key="IdBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFontFamily}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="FontSize" Value="11"/>
+  </Style>
+
+  <Style x:Key="DirBadgeBorderStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="3"/>
+    <Setter Property="Padding" Value="6,1"/>
+    <Setter Property="HorizontalAlignment" Value="Left"/>
+    <Setter Property="Background" Value="{DynamicResource PanelDarkerBrush}"/>
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding Direction}" Value="RX">
+        <Setter Property="Background" Value="{DynamicResource PassSoftBrush}"/>
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Direction}" Value="TX">
+        <Setter Property="Background" Value="{DynamicResource WarningSoftBrush}"/>
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Direction}" Value="ERR">
+        <Setter Property="Background" Value="{DynamicResource FailSoftBrush}"/>
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+  <Style x:Key="DirBadgeTextStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="FontSize" Value="10"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/>
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding Direction}" Value="RX">
+        <Setter Property="Foreground" Value="{DynamicResource PassBrush}"/>
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Direction}" Value="TX">
+        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+      </DataTrigger>
+      <DataTrigger Binding="{Binding Direction}" Value="ERR">
+        <Setter Property="Foreground" Value="{DynamicResource FailBrush}"/>
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- "Notebook" panel tabs: flush bottom border merges into the panel body when active -->
+  <Style TargetType="TabControl">
+    <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <Grid KeyboardNavigation.TabNavigation="Local">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderSubBrush}" BorderThickness="0,0,0,1">
+              <TabPanel x:Name="HeaderPanel" IsItemsHost="True" Margin="6,4,6,-1" KeyboardNavigation.TabIndex="1"/>
+            </Border>
+            <Border Grid.Row="1" Background="{DynamicResource SurfaceBrush}">
+              <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+            </Border>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="TabItem">
+    <Setter Property="Padding" Value="12,7"/>
+    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Border x:Name="Root" Margin="0,0,3,0" CornerRadius="6,6,0,0" BorderThickness="1,1,1,0" Background="Transparent" BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
+            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+              <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BorderSubBrush}"/>
+              <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsMouseOver" Value="True"/>
+                <Condition Property="IsSelected" Value="False"/>
+              </MultiTrigger.Conditions>
+              <Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/>
+            </MultiTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- TreeView: replace OS chrome with flat rows, rotating disclosure glyph, hover/selected states -->
+  <Style x:Key="TreeExpanderToggleStyle" TargetType="ToggleButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="Width" Value="14"/>
+    <Setter Property="Height" Value="14"/>
+    <Setter Property="ClickMode" Value="Press"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border Background="Transparent">
+            <Path x:Name="Arrow" Data="M 1,1 L 5,5 L 1,9" Stroke="{DynamicResource MutedTextBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+              <Path.RenderTransform>
+                <RotateTransform Angle="0"/>
+              </Path.RenderTransform>
+            </Path>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Arrow" Property="RenderTransform">
+                <Setter.Value>
+                  <RotateTransform Angle="90"/>
+                </Setter.Value>
+              </Setter>
+              <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="TreeView">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="0"/>
+  </Style>
+
+  <Style TargetType="TreeViewItem">
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TreeViewItem">
+          <StackPanel>
+            <Border x:Name="RowBorder" CornerRadius="4" Margin="0,1" Background="Transparent">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="18"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ToggleButton x:Name="Expander" Style="{StaticResource TreeExpanderToggleStyle}" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"/>
+                <ContentPresenter x:Name="PART_Header" Grid.Column="1" ContentSource="Header" Margin="0,5" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
+            <Border x:Name="ItemsBorder" Margin="17,0,0,0" BorderBrush="{DynamicResource BorderSubBrush}" BorderThickness="1,0,0,0">
+              <ItemsPresenter x:Name="ItemsHost" Margin="10,0,0,0"/>
+            </Border>
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="HasItems" Value="False">
+              <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+              <Setter TargetName="ItemsBorder" Property="Visibility" Value="Collapsed"/>
+            </Trigger>
+            <Trigger Property="IsExpanded" Value="False">
+              <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource PanelBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="RowBorder" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>

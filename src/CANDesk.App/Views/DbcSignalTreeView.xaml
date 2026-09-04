@@ -3,22 +3,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid Margin="8">
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search signals / messages" />
-    <TreeView Grid.Row="1" ItemsSource="{Binding Messages}" Margin="0,8,0,0" Background="Transparent" BorderThickness="0">
+    <Border Style="{StaticResource SearchBoxContainerStyle}">
+      <TextBox Style="{StaticResource SearchTextBoxStyle}" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Message / Signal..." />
+    </Border>
+    <TreeView Grid.Row="1" ItemsSource="{Binding Messages}" Margin="0,8,0,0">
       <TreeView.ItemTemplate>
         <HierarchicalDataTemplate ItemsSource="{Binding Signals}">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{Binding Id}" Foreground="{DynamicResource AccentBrush}" FontFamily="Consolas" />
-            <TextBlock Text="  {Binding Name}" />
-            <TextBlock Text="  {Binding Meta}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" />
+            <Border Style="{StaticResource IdBadgeStyle}" Margin="0,0,7,0">
+              <TextBlock Style="{StaticResource IdBadgeTextStyle}" Text="{Binding Id}" />
+            </Border>
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding Meta, StringFormat=' · {0}'}" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0" />
           </StackPanel>
           <HierarchicalDataTemplate.ItemTemplate>
             <DataTemplate>
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="•" Foreground="{DynamicResource MutedTextBrush}" />
-                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSubBrush}" />
-                <TextBlock Text="  {Binding Value}" Foreground="{DynamicResource PassBrush}" FontFamily="Consolas" />
-              </StackPanel>
+              <DockPanel MinWidth="180">
+                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSubBrush}" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" Foreground="{DynamicResource PassBrush}" FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="11" HorizontalAlignment="Right" Margin="14,0,0,0" />
+              </DockPanel>
             </DataTemplate>
           </HierarchicalDataTemplate.ItemTemplate>
         </HierarchicalDataTemplate>
