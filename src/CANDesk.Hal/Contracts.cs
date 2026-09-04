@@ -2,7 +2,8 @@ namespace CANDesk.Hal;
 
 public enum CanDeviceStatus { Closed, Opening, Open, BusOff, Faulted }
 public enum CanErrorKind { BusOff, ErrorWarning, ErrorPassive, Crc, Bit, ReceiveOverflow, TransmitFailure, Driver }
-public sealed record CanDeviceDescriptor(string Vendor, string DeviceId, string DisplayName, IReadOnlyList<string> Channels, bool SupportsCanFd);
+public sealed record CanDeviceDescriptor(string Vendor, string DeviceId, string DisplayName, IReadOnlyList<string> Channels,
+    bool SupportsCanFd, int? ClockFrequencyHz = null);
 public enum CanBusMode { Classic, Fd }
 
 /// <summary>Timing for a single CAN arbitration or CAN-FD data phase.</summary>
@@ -32,6 +33,25 @@ public sealed record CanBusConfig
             ? new((int)(dataBitRate.Value / 1_000), dataSamplePoint ?? 80.0)
             : null;
     }
+
+    /// <summary>Reject incomplete or contradictory bus timing before a vendor driver opens a channel.</summary>
+    public void Validate()
+    {
+        ValidateTiming(Nominal, nameof(Nominal));
+        if (Mode == CanBusMode.Fd && Data is null)
+            throw new InvalidOperationException("CAN-FD requires a data phase bit timing setting.");
+        if (Mode == CanBusMode.Classic && Data is not null)
+            throw new InvalidOperationException("Classic CAN must not define CAN-FD data phase timing.");
+        if (Data is not null) ValidateTiming(Data, nameof(Data));
+    }
+
+    private static void ValidateTiming(BitTimingSetting timing, string propertyName)
+    {
+        if (timing.BitrateKbps <= 0)
+            throw new ArgumentOutOfRangeException(propertyName, "Bitrate must be positive.");
+        if (timing.SamplePointPercent is <= 0 or > 100)
+            throw new ArgumentOutOfRangeException(propertyName, "Sample point must be greater than 0 and no more than 100 percent.");
+    }
 }
 
 public interface IBitrateTableProvider
@@ -40,6 +60,14 @@ public interface IBitrateTableProvider
     IReadOnlyList<BitTimingSetting> GetFdDataPhasePresets();
     void RegisterCustomPreset(BitTimingSetting setting);
 }
+
+/// <summary>Converts a bitrate/sample-point request for legacy SDKs that require controller register values.</summary>
+public interface IBitTimingCalculator
+{
+    CanBitTimingRegisters Calculate(BitTimingSetting setting, int deviceClockHz);
+}
+
+public readonly record struct CanBitTimingRegisters(int Prescaler, int Tseg1, int Tseg2, int Sjw);
 
 public sealed class BitrateTableProvider : IBitrateTableProvider
 {

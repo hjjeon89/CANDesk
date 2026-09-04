@@ -1,0 +1,56 @@
+using CANDesk.Core.Scheduling;
+using CANDesk.Hal;
+using Xunit;
+
+namespace CANDesk.Core.Tests;
+
+public sealed class TxSchedulerTests
+{
+    [Fact]
+    public async Task TriggeredJob_PublishesSendFailureInsteadOfSilentlyDroppingIt()
+    {
+        var device = new ThrowingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var failure = new TaskCompletionSource<TxSchedulerErrorEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.ErrorOccurred += (_, args) => failure.TrySetResult(args);
+        var jobId = scheduler.ScheduleTriggered(CanFrame.Create(0x301, [0x00]), new AlwaysTrigger());
+
+        scheduler.NotifyReceived(CanFrame.Create(0x100, [0x01]));
+
+        var error = await failure.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(jobId, error.JobId);
+        Assert.IsType<InvalidOperationException>(error.Exception);
+    }
+
+    private sealed class AlwaysTrigger : ITriggerCondition
+    {
+        public bool IsSatisfied(in CanFrame receivedFrame) => true;
+    }
+
+    private sealed class ThrowingCanDevice : ICanDevice
+    {
+        public string ChannelName => "Test";
+        public CanDeviceStatus Status => CanDeviceStatus.Open;
+        public event EventHandler<CanErrorEventArgs>? ErrorOccurred
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+        public Task OpenAsync(CanBusConfig config, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default) => ValueTask.FromException(new InvalidOperationException("Injected send failure."));
+        public async IAsyncEnumerable<CanFrame> ReadFramesAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public Task ResetBusAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

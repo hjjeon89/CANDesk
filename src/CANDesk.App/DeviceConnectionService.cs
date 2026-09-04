@@ -19,6 +19,7 @@ public sealed class DeviceConnectionService(IEnumerable<ICanDeviceFactory> facto
     }
     public async Task ConnectAsync(ICanDeviceFactory factory, string deviceId, string channelName, CanBusConfig configuration, CancellationToken cancellationToken = default)
     {
+        configuration.Validate();
         await DisconnectAsync(cancellationToken);
         var device = await factory.CreateAsync(deviceId, channelName, cancellationToken);
         try { await device.OpenAsync(configuration, cancellationToken); CurrentDevice = device; }
