@@ -16,10 +16,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly DeviceConnectionService _connection;
     private RxDispatcher _dispatcher;
-    private long _frameSequence;
     public ObservableCollection<TraceFrameRow> Frames { get; } = [];
     public ICollectionView TraceFramesView { get; }
     public MessageMonitorViewModel Monitor { get; } = new();
+    public TraceLogViewModel TraceLog { get; } = new();
+    public DbcSignalTreeViewModel DbcSignalTree { get; } = new();
+    public MessageDbEditorViewModel MessageDbEditor { get; } = new();
+    public TransmitPanelViewModel TransmitPanel { get; } = new();
     public ObservableCollection<MessageTreeItem> MessageTree { get; } =
     [new("0x100", "EngineStatus", "10ms · DLC:8", [new("EngineSpeed", "2,450 rpm"), new("CoolantTemp", "87.5 °C"), new("EngineState", "Running")]), new("0x200", "BatteryPackStatus", "50ms · DLC:8", [new("PackVoltage", "398.2 V"), new("PackCurrent", "-24.5 A"), new("StateOfCharge", "78 %")]), new("0x301", "VCU_Control", "Cyclic · DLC:8", [new("TorqueRequest", "120 Nm"), new("RollingCounter", "0")])];
     public ObservableCollection<TxJobRow> TxJobs { get; } = [new("0x301", "VCU_Control", "20 ms", "8", "AA BB CC 00 00 00 00 12", true, true, true), new("0x7DF", "OBD-II Req (Tester)", "Manual", "8", "02 01 0C 55 55 55 55 55", false, false, false)];
@@ -77,8 +80,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand] private void ToggleCapture() => IsCapturing = !IsCapturing;
     [RelayCommand] private void ClearTrace()
     {
-        Frames.Clear();
-        SelectedFrame = TraceFrameRow.Empty;
+        TraceLog.Clear();
         Monitor.Clear();
     }
     [RelayCommand] private async Task Connect()
@@ -99,15 +101,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (!IsCapturing) return;
         Monitor.ProcessFrames(frames);
-        foreach (var frame in frames)
-        {
-            var bytes = Convert.ToHexString(frame.PayloadSpan).Chunk(2).Select(hex => new string(hex)).ToArray();
-            var data = string.Join(" ", bytes);
-            var direction = frame.Flags.HasFlag(CanFrameFlags.ErrorFrame) ? "ERR" : "RX";
-            var row = new TraceFrameRow(Interlocked.Increment(ref _frameSequence), frame.SystemTime, $"0x{frame.Id:X3}", direction, frame.Dlc, data, "Raw frame", bytes);
-            Frames.Add(row); SelectedFrame = row;
-        }
-        while (Frames.Count > 10_000) Frames.RemoveAt(0);
+        TraceLog.ProcessFrames(frames);
         OnPropertyChanged(nameof(DroppedFrameCount));
     }, DispatcherPriority.Background);
     public ValueTask DisposeAsync() => _dispatcher.DisposeAsync();

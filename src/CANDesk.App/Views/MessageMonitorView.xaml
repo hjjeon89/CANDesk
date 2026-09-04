@@ -13,7 +13,7 @@
             CornerRadius="6">
       <DockPanel LastChildFill="False">
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-          <TextBlock Text="MONITOR FILTER" Foreground="{DynamicResource MutedTextBrush}" FontSize="10" FontWeight="SemiBold" Margin="0,0,8,0" />
+          <TextBlock Text="MONITOR FILTER" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold" Margin="0,0,8,0" />
           <TextBox Width="145" Text="{Binding IdFilter, UpdateSourceTrigger=PropertyChanged}" ToolTip="CAN ID, e.g. 0x100" />
           <CheckBox Content="Show RX" IsChecked="{Binding ShowRx}" Margin="12,0,0,0" />
           <CheckBox Content="Show TX" IsChecked="{Binding ShowTx}" Margin="10,0,0,0" />
