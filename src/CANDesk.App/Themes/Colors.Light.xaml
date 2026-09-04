@@ -1,0 +1,37 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Color x:Key="BackgroundColor">#FFF8FAFC</Color>
+  <Color x:Key="SurfaceColor">#FFFFFFFF</Color>
+  <Color x:Key="PanelColor">#FFF1F5F9</Color>
+  <Color x:Key="PanelHeaderColor">#FFF8FAFC</Color>
+  <Color x:Key="PanelSubColor">#FFEFF6FF</Color>
+  <Color x:Key="PanelDarkerColor">#FFE2E8F0</Color>
+  <Color x:Key="BorderColor">#FFCBD5E1</Color>
+  <Color x:Key="BorderSubColor">#FFE2E8F0</Color>
+  <Color x:Key="TextColor">#FF0F172A</Color>
+  <Color x:Key="TextSubColor">#FF475569</Color>
+  <Color x:Key="MutedTextColor">#FF64748B</Color>
+  <Color x:Key="AccentColor">#FF0284C7</Color>
+  <Color x:Key="AccentHoverColor">#FF0369A1</Color>
+  <Color x:Key="AccentSoftColor">#FFE0F2FE</Color>
+  <Color x:Key="PassColor">#FF059669</Color>
+  <Color x:Key="WarningColor">#FFD97706</Color>
+  <Color x:Key="FailColor">#FFDC2626</Color>
+  <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
+  <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
+  <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}"/>
+  <SolidColorBrush x:Key="PanelHeaderBrush" Color="{StaticResource PanelHeaderColor}"/>
+  <SolidColorBrush x:Key="PanelSubBrush" Color="{StaticResource PanelSubColor}"/>
+  <SolidColorBrush x:Key="PanelDarkerBrush" Color="{StaticResource PanelDarkerColor}"/>
+  <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
+  <SolidColorBrush x:Key="BorderSubBrush" Color="{StaticResource BorderSubColor}"/>
+  <SolidColorBrush x:Key="TextMainBrush" Color="{StaticResource TextColor}"/>
+  <SolidColorBrush x:Key="TextSubBrush" Color="{StaticResource TextSubColor}"/>
+  <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}"/>
+  <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
+  <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHoverColor}"/>
+  <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}"/>
+  <SolidColorBrush x:Key="PassBrush" Color="{StaticResource PassColor}"/>
+  <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
+  <SolidColorBrush x:Key="FailBrush" Color="{StaticResource FailColor}"/>
+</ResourceDictionary>
