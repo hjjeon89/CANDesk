@@ -18,9 +18,13 @@ public partial class MainWindow : Window
 
     private void OnMessageEditorRequested(object? sender, EventArgs args)
     {
-        if (_messageEditorWindow is { IsVisible: true })
+        if (_messageEditorWindow is { IsVisible: true } window)
         {
-            _messageEditorWindow.Activate();
+            if (window.WindowState == WindowState.Minimized)
+            {
+                window.WindowState = WindowState.Normal;
+            }
+            window.Activate();
             return;
         }
 

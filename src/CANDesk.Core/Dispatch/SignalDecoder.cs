@@ -22,6 +22,15 @@ public sealed class SignalDecoder(IMessageDatabase database)
         return decoded;
     }
 
+    /// <summary>Decodes a single signal's physical value from a payload, without a message lookup.
+    /// The inverse of <see cref="SignalEncoder.Encode"/>.</summary>
+    public static double DecodeValue(ReadOnlySpan<byte> payload, DbcSignal signal)
+    {
+        var raw = ReadRaw(payload, signal);
+        if (signal.IsSigned) raw = SignExtend(raw, signal.BitLength);
+        return raw * signal.Factor + signal.Offset;
+    }
+
     private static long ReadRaw(ReadOnlySpan<byte> data, DbcSignal signal)
     {
         if (signal.StartBit < 0 || signal.BitLength is < 1 or > 64) throw new InvalidOperationException($"Invalid signal '{signal.Name}'.");

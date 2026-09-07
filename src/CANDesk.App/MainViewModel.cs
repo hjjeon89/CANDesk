@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Threading;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -19,8 +20,12 @@ namespace CANDesk.App;
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly DeviceConnectionService _connection;
+    private readonly DispatcherTimer _rateTimer;
     private RxDispatcher _dispatcher;
     private ITxScheduler? _txScheduler;
+    private long _rxFrameCount;
+    private long _txFrameCount;
+    private long _busBitsAccumulated;
     public event EventHandler? MessageEditorRequested;
     public ObservableCollection<TraceFrameRow> Frames { get; } = [];
     public ICollectionView TraceFramesView { get; }
@@ -64,8 +69,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         "BusOff" or "Faulted" => Brushes.Firebrick,
         _ => Brushes.SlateGray
     };
-    public string RxRate => "0";
-    public string TxRate => "0";
+    [ObservableProperty] private string _rxRate = "0";
+    [ObservableProperty] private string _txRate = "0";
+    [ObservableProperty] private double _busLoadPercent;
+    public string BusLoadText => $"{BusLoadPercent:0.0}%";
+    /// <summary>Pixel width of the status-bar bus-load indicator fill, scaled against the 60px track
+    /// drawn in <c>MainWindow.xaml</c>.</summary>
+    public double BusLoadBarWidth => Math.Clamp(BusLoadPercent, 0, 100) / 100.0 * 60.0;
     public long DroppedFrameCount => _dispatcher.DroppedFrameCount;
     public Brush DroppedFrameBrush => DroppedFrameCount > 0 ? Brushes.Firebrick : Brushes.SlateGray;
 
@@ -85,6 +95,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             () => MessageDbEditor.Nodes.Select(node => node.Name).ToArray(),
             nodeName => MessageDbEditor.GetTransmitMessages(nodeName));
         MessageDbEditor.NodesChanged += (_, _) => TransmitPanel.RefreshEmulatedNodes();
+        _rateTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _rateTimer.Tick += (_, _) => UpdateRates();
+        _rateTimer.Start();
     }
     public async Task AttachCurrentDeviceAsync(CancellationToken cancellationToken = default)
     {
@@ -98,16 +111,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var txScheduler = new TxScheduler(device);
         _txScheduler = txScheduler;
         txScheduler.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"TX 0x{args.Frame.Id:X3}: {args.Exception.Message}");
-        TransmitPanel.SetScheduler(txScheduler);
-        TransmitPanel.SetSendHandler(async frame =>
+        // One subscription covers every send path (single, cyclic, triggered) so cyclic TX frames
+        // are no longer invisible to Trace/Monitor, and TX rate counting doesn't miss them either.
+        txScheduler.FrameSent += (_, frame) =>
         {
-            await txScheduler.SendOnceAsync(frame);
+            Interlocked.Increment(ref _txFrameCount);
+            Interlocked.Add(ref _busBitsAccumulated, EstimateFrameBits(frame));
             DispatchToUi(() =>
             {
                 TraceLog.ProcessTransmittedFrame(frame);
                 Monitor.ProcessTransmittedFrame(frame);
             });
-        });
+        };
+        TransmitPanel.SetScheduler(txScheduler);
+        TransmitPanel.SetSendHandler(frame => txScheduler.SendOnceAsync(frame).AsTask());
         Status = device.Status.ToString(); OnPropertyChanged(nameof(DeviceStatusText));
         await _dispatcher.StartAsync(device.ReadFramesAsync(cancellationToken), cancellationToken);
     }
@@ -161,6 +178,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await using var stream = File.OpenRead(dialog.FileName);
             var database = await new DbcParser().ParseAsync(stream);
             DbcSignalTree.Load(database);
+            TraceLog.SetDatabase(database);
             SelectedLeftTabIndex = 0;
             LastDeviceError = string.Empty;
         }
@@ -237,21 +255,58 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(BusStatusText));
         OnPropertyChanged(nameof(BusStatusBrush));
     }
-    private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames) => DispatchToUi(() =>
+    private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames)
     {
-        if (!IsCapturing) return;
-        Monitor.ProcessFrames(frames);
-        TraceLog.ProcessFrames(frames);
-        OnPropertyChanged(nameof(DroppedFrameCount));
-        OnPropertyChanged(nameof(DroppedFrameBrush));
-    });
+        // Counted here (off the UI thread, as frames actually arrive) rather than in IsCapturing-gated
+        // UI processing below, so RxRate/BusLoad reflect real bus traffic even while capture is paused.
+        Interlocked.Add(ref _rxFrameCount, frames.Count);
+        long bits = 0;
+        foreach (var frame in frames) bits += EstimateFrameBits(frame);
+        Interlocked.Add(ref _busBitsAccumulated, bits);
+
+        DispatchToUi(() =>
+        {
+            if (!IsCapturing) return;
+            Monitor.ProcessFrames(frames);
+            TraceLog.ProcessFrames(frames);
+            OnPropertyChanged(nameof(DroppedFrameCount));
+            OnPropertyChanged(nameof(DroppedFrameBrush));
+        });
+    }
+
+    private void UpdateRates()
+    {
+        RxRate = Interlocked.Exchange(ref _rxFrameCount, 0).ToString();
+        TxRate = Interlocked.Exchange(ref _txFrameCount, 0).ToString();
+
+        var bits = Interlocked.Exchange(ref _busBitsAccumulated, 0);
+        var bitrateKbps = Connection.SelectedNominalTiming.BitrateKbps;
+        BusLoadPercent = bitrateKbps > 0 ? Math.Min(100.0, bits / (bitrateKbps * 1000.0) * 100.0) : 0.0;
+    }
+
+    /// <summary>Rough on-wire bit-length estimate for bus-load purposes: fixed frame overhead
+    /// (SOF/ID/control/CRC/ACK/EOF/IFS, extended IDs costing 20 more ID bits) plus 8 bits per data
+    /// byte. Deliberately ignores bit stuffing (~+20% worst case), which real CAN traffic rarely hits
+    /// continuously, so this is an approximation rather than an exact wire count.</summary>
+    private static int EstimateFrameBits(in CanFrame frame)
+    {
+        var overheadBits = frame.Flags.HasFlag(CanFrameFlags.Extended) ? 67 : 47;
+        return overheadBits + frame.PayloadLength * 8;
+    }
     public async ValueTask DisposeAsync()
     {
+        _rateTimer.Stop();
         if (_txScheduler is not null)
         {
             await _txScheduler.DisposeAsync().ConfigureAwait(false);
         }
         await _dispatcher.DisposeAsync().ConfigureAwait(false);
+    }
+
+    partial void OnBusLoadPercentChanged(double value)
+    {
+        OnPropertyChanged(nameof(BusLoadText));
+        OnPropertyChanged(nameof(BusLoadBarWidth));
     }
 
     partial void OnTraceFilterTextChanged(string value) => TraceFramesView.Refresh();
@@ -324,10 +379,34 @@ public sealed partial class TxJobRow : ObservableObject
     /// <summary>Editable per-signal values for <see cref="Message"/>; empty for freeform jobs.</summary>
     public ObservableCollection<TxSignalEditRow> Signals { get; } = [];
 
+    /// <summary>Set while a <see cref="TxSignalEditRow"/> is re-encoding <see cref="Payload"/> from a
+    /// physical value change, so <see cref="OnPayloadChanged"/> does not redundantly decode it back.</summary>
+    internal bool IsSyncingFromSignalEdit { get; set; }
+
     [ObservableProperty] private string _payload;
     [ObservableProperty] private bool _isEnabled;
     [ObservableProperty] private bool _autoCounter;
     [ObservableProperty] private bool _e2eCrc;
+
+    partial void OnPayloadChanged(string value)
+    {
+        if (IsSyncingFromSignalEdit || Message is null || Signals.Count == 0) return;
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromHexString(value.Replace(" ", string.Empty, StringComparison.Ordinal));
+        }
+        catch (FormatException)
+        {
+            return;
+        }
+
+        foreach (var signal in Signals)
+        {
+            signal.RefreshFromPayload(bytes);
+        }
+    }
 }
 
 /// <summary>
@@ -349,11 +428,38 @@ public sealed partial class TxSignalEditRow : ObservableObject
 
     public string DisplayName => string.IsNullOrEmpty(_signal.Unit) ? _signal.Name : $"{_signal.Name} ({_signal.Unit})";
 
+    private bool _isSyncingFromPayload;
+
     [ObservableProperty] private string _valueText;
+
+    /// <summary>Re-reads this signal's physical value from a freshly-edited raw payload, without
+    /// re-triggering the encode path back into <see cref="TxJobRow.Payload"/>.</summary>
+    internal void RefreshFromPayload(byte[] payload)
+    {
+        double physicalValue;
+        try
+        {
+            physicalValue = CANDesk.Core.Dispatch.SignalDecoder.DecodeValue(payload, _signal);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        _isSyncingFromPayload = true;
+        try
+        {
+            ValueText = physicalValue.ToString("0.###");
+        }
+        finally
+        {
+            _isSyncingFromPayload = false;
+        }
+    }
 
     partial void OnValueTextChanged(string value)
     {
-        if (!double.TryParse(value, out var physicalValue)) return;
+        if (_isSyncingFromPayload || !double.TryParse(value, out var physicalValue)) return;
 
         byte[] bytes;
         try
@@ -374,7 +480,15 @@ public sealed partial class TxSignalEditRow : ObservableObject
             return;
         }
 
-        _job.Payload = string.Join(' ', bytes.Select(b => b.ToString("X2")));
+        _job.IsSyncingFromSignalEdit = true;
+        try
+        {
+            _job.Payload = string.Join(' ', bytes.Select(b => b.ToString("X2")));
+        }
+        finally
+        {
+            _job.IsSyncingFromSignalEdit = false;
+        }
     }
 }
 public sealed record TraceFrameRow(long Index, DateTime Time, string Id, string Direction, byte Dlc, string Data, string Summary, IReadOnlyList<string> Bytes)

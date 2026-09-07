@@ -12,8 +12,10 @@
         <Menu VerticalAlignment="Center">
           <MenuItem Header="_File">
             <MenuItem Header="New Message Database" Command="{Binding NewMessageDatabaseCommand}" />
-            <MenuItem Header="Open Database..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Open DBC Database..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Open Message Database (.xml)..." Command="{Binding MessageDbEditor.OpenCommand}" />
             <MenuItem Header="Save Message Database..." Command="{Binding MessageDbEditor.SaveCommand}" />
+            <MenuItem Header="Export Message Database as DBC..." Command="{Binding MessageDbEditor.ExportDbcCommand}" />
             <Separator />
             <MenuItem Header="Export Trace..." Command="{Binding ExportTraceCommand}" />
             <Separator />
@@ -92,9 +94,9 @@
           <TextBlock Text="{Binding BusStatusText}" Foreground="{Binding BusStatusBrush}" />
           <TextBlock Text="  |  Bus Load:" Foreground="{DynamicResource MutedTextBrush}" Margin="14,0,4,0" />
           <Border Width="60" Height="6" CornerRadius="3" Background="{DynamicResource PanelDarkerBrush}" VerticalAlignment="Center">
-            <Border Width="9" HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource AccentBrush}" />
+            <Border Width="{Binding BusLoadBarWidth}" HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource AccentBrush}" />
           </Border>
-          <TextBlock Text="14.8%" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" Margin="4,0,0,0" />
+          <TextBlock Text="{Binding BusLoadText}" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" Margin="4,0,0,0" />
           <TextBlock Text="{Binding LastDeviceError}" Foreground="{DynamicResource FailBrush}" Margin="14,0,0,0" />
         </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">

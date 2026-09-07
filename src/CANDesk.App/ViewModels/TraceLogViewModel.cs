@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
 using System.Windows.Media;
+using CANDesk.Core.Dispatch;
+using CANDesk.Core.MessageDb;
 using CANDesk.Hal;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -15,6 +17,8 @@ public enum TraceCaptureStatus { Running, Paused, Stopped }
 public sealed partial class TraceLogViewModel : ObservableObject
 {
     private long _sequence;
+    private IMessageDatabase? _database;
+    private SignalDecoder? _decoder;
 
     public ObservableCollection<TraceFrameRow> Frames { get; } = [];
     public ICollectionView FramesView { get; }
@@ -72,6 +76,14 @@ public sealed partial class TraceLogViewModel : ObservableObject
         StopCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>Sets the message database used to decode the Summary column on demand as frames
+    /// arrive. Pass null to fall back to raw-frame summaries (e.g. before a DBC is loaded).</summary>
+    public void SetDatabase(IMessageDatabase? database)
+    {
+        _database = database;
+        _decoder = database is not null ? new SignalDecoder(database) : null;
+    }
+
     public void ProcessFrames(IReadOnlyList<CanFrame> frames)
     {
         foreach (var frame in frames)
@@ -100,10 +112,23 @@ public sealed partial class TraceLogViewModel : ObservableObject
             direction,
             frame.Dlc,
             string.Join(" ", bytes),
-            "Raw frame",
+            Summarize(frame),
             bytes);
         Frames.Add(row);
         SelectedFrame = row;
+    }
+
+    private string Summarize(in CanFrame frame)
+    {
+        if (_decoder is null || _database is null || !_database.TryGetMessage(frame.Id, out var message))
+        {
+            return "Raw frame";
+        }
+
+        var decoded = _decoder.Decode(frame);
+        return decoded.Count == 0
+            ? message.Name
+            : $"{message.Name}: " + string.Join(", ", decoded.Select(signal => $"{signal.SignalName}={signal.PhysicalValue:0.###}{signal.Unit}"));
     }
 
     private void TrimToCapacity()

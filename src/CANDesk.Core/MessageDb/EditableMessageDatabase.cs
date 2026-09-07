@@ -34,6 +34,18 @@ public sealed class EditableMessageDatabase(IMessageDatabase initial) : IEditabl
     private readonly Stack<DatabaseState> _redo = new();
     private readonly Dictionary<string, CanNode> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<uint, MessageNodeAssignment> _nodeAssignments = [];
+
+    /// <summary>Seeds an editing session from a fully-loaded document (e.g. a re-opened CANDesk XML
+    /// file) so nodes and TX/RX assignments survive the round trip, not just the messages.</summary>
+    public EditableMessageDatabase(IMessageDatabase initial, IReadOnlyCollection<CanNode> nodes,
+        IReadOnlyDictionary<uint, MessageNodeAssignment> assignments) : this(initial)
+    {
+        foreach (var node in nodes) _nodes.Add(node.Name, node);
+        foreach (var (canId, assignment) in assignments)
+        {
+            _nodeAssignments[canId] = assignment with { ReceiverNodes = assignment.ReceiverNodes.ToHashSet(StringComparer.Ordinal) };
+        }
+    }
     public IMessageDatabase Snapshot => new MessageDatabase(_messages.Values);
     public bool IsDirty { get; private set; }
     public bool CanUndo => _undo.Count > 0;

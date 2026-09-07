@@ -22,6 +22,21 @@ public sealed class TxSchedulerTests
         Assert.IsType<InvalidOperationException>(error.Exception);
     }
 
+    [Fact]
+    public async Task SendOnceAsync_RaisesFrameSent_ForRateAndTraceObservers()
+    {
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sent = new TaskCompletionSource<CanFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.FrameSent += (_, frame) => sent.TrySetResult(frame);
+        var frame = CanFrame.Create(0x200, [0x01, 0x02]);
+
+        await scheduler.SendOnceAsync(frame);
+
+        var observed = await sent.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(frame.Id, observed.Id);
+    }
+
     private sealed class AlwaysTrigger : ITriggerCondition
     {
         public bool IsSatisfied(in CanFrame receivedFrame) => true;
@@ -45,6 +60,33 @@ public sealed class TxSchedulerTests
         public Task OpenAsync(CanBusConfig config, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default) => ValueTask.FromException(new InvalidOperationException("Injected send failure."));
+        public async IAsyncEnumerable<CanFrame> ReadFramesAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public Task ResetBusAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingCanDevice : ICanDevice
+    {
+        public string ChannelName => "Test";
+        public CanDeviceStatus Status => CanDeviceStatus.Open;
+        public event EventHandler<CanErrorEventArgs>? ErrorOccurred
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+        public Task OpenAsync(CanBusConfig config, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public async IAsyncEnumerable<CanFrame> ReadFramesAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.CompletedTask;

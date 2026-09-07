@@ -13,6 +13,11 @@ public interface ITriggerCondition
 public interface ITxScheduler : IAsyncDisposable
 {
     event EventHandler<TxSchedulerErrorEventArgs>? ErrorOccurred;
+
+    /// <summary>Raised after a frame is successfully handed to the device — for single sends,
+    /// cyclic jobs, and triggered jobs alike — so callers can observe actual bus TX traffic
+    /// (trace/monitor mirroring, TX rate counting) from one place regardless of send path.</summary>
+    event EventHandler<CanFrame>? FrameSent;
     Guid ScheduleCyclic(CanFrame templateFrame, TimeSpan period, PreSendModifier? preSendModifier = null);
     Guid ScheduleTriggered(CanFrame templateFrame, ITriggerCondition trigger, PreSendModifier? preSendModifier = null);
     ValueTask SendOnceAsync(CanFrame frame, CancellationToken cancellationToken = default);
@@ -45,6 +50,7 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
     private int _disposeState;
 
     public event EventHandler<TxSchedulerErrorEventArgs>? ErrorOccurred;
+    public event EventHandler<CanFrame>? FrameSent;
 
     public Guid ScheduleCyclic(CanFrame templateFrame, TimeSpan period, PreSendModifier? preSendModifier = null)
     {
@@ -70,7 +76,11 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
         return id;
     }
 
-    public ValueTask SendOnceAsync(CanFrame frame, CancellationToken cancellationToken = default) => device.SendAsync(frame, cancellationToken);
+    public async ValueTask SendOnceAsync(CanFrame frame, CancellationToken cancellationToken = default)
+    {
+        await device.SendAsync(frame, cancellationToken).ConfigureAwait(false);
+        FrameSent?.Invoke(this, frame);
+    }
 
     public void NotifyReceived(in CanFrame frame)
     {
@@ -133,6 +143,7 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
         }
 
         await device.SendAsync(frame, ct).ConfigureAwait(false);
+        FrameSent?.Invoke(this, frame);
     }
 
     private async Task SendJobSafelyAsync(Guid jobId, Job job, CancellationToken ct)

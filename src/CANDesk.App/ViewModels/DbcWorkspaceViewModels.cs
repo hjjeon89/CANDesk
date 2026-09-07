@@ -120,12 +120,59 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
         try
         {
             await using var stream = File.Create(dialog.FileName);
-            await new CandeskXmlWriter().WriteAsync(_database.Snapshot, stream);
+            await new CandeskXmlWriter().WriteAsync(_database.Nodes, _database.Snapshot, _database.GetNodeAssignment, stream);
             SaveError = string.Empty;
         }
         catch (Exception exception)
         {
             SaveError = $"Save failed: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportDbcAsync()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "DBC database (*.dbc)|*.dbc",
+            FileName = "candesk-database.dbc",
+            Title = "Export Message Database as DBC"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            await using var stream = File.Create(dialog.FileName);
+            await new DbcWriter().WriteAsync(_database.Nodes, _database.Snapshot, _database.GetNodeAssignment, stream);
+            SaveError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            SaveError = $"Export failed: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "CANDesk XML database (*.xml)|*.xml",
+            Title = "Open Message Database"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            await using var stream = File.OpenRead(dialog.FileName);
+            var document = await new CandeskXmlParser().ParseDocumentAsync(stream);
+            _database = new EditableMessageDatabase(document.Database, document.Nodes, document.Assignments);
+            SyncFromDatabase();
+            SaveError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            SaveError = $"Open failed: {exception.Message}";
         }
     }
 
