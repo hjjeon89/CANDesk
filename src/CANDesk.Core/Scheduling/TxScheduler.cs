@@ -114,6 +114,7 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
 
     private async Task RunCyclicAsync(Guid id, Job job, CancellationToken ct)
     {
+        using var highResolutionScope = HighResolutionTimerScope.Acquire();
         using var timer = new PeriodicTimer(job.Period!.Value);
         try
         {

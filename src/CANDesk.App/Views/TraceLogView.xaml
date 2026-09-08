@@ -8,6 +8,8 @@
         <Button Content="▶ Start" Command="{Binding StartCommand}" ToolTip="Resume recording frames into the trace" />
         <Button Content="❚❚ Pause" Command="{Binding PauseCommand}" Margin="5,0,0,0" ToolTip="Stop appending new frames, keep what's recorded" />
         <Button Content="■ Stop" Command="{Binding StopCommand}" Margin="5,0,0,0" ToolTip="End the recording session" />
+        <Button Content="⟲ Clear" Command="{Binding ClearCommand}" Margin="10,0,0,0" ToolTip="Remove all rows from the trace" />
+        <ToggleButton Content="⚡ Auto Scroll" IsChecked="{Binding IsAutoScroll, Mode=TwoWay}" Margin="10,0,0,0" ToolTip="Keep the newest frame visible as rows are appended" />
         <TextBlock Text="{Binding CaptureStatusText}" Foreground="{Binding CaptureStatusBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" />
       </StackPanel>
       <Button DockPanel.Dock="Right" Content="Export..." Width="96" Command="{Binding DataContext.ExportTraceCommand, RelativeSource={RelativeSource AncestorType=Window}}" ToolTip="Export the recorded trace to a CSV file" />
@@ -22,7 +24,7 @@
       <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{DynamicResource FailBrush}" />
     </StackPanel>
     <Border Grid.Row="2" Style="{StaticResource PanelCardStyle}">
-      <DataGrid ItemsSource="{Binding FramesView}" SelectedItem="{Binding SelectedFrame}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" BorderThickness="0" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
+      <DataGrid x:Name="TraceGrid" ItemsSource="{Binding FramesView}" SelectedItem="{Binding SelectedFrame}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" BorderThickness="0" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
         <DataGrid.Columns>
           <DataGridTextColumn Header="No" Binding="{Binding Index}" Width="50" />
           <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100" />

@@ -20,6 +20,7 @@
           <CheckBox Content="Show RX" IsChecked="{Binding ShowRx}" VerticalAlignment="Center" Margin="12,0,0,0" />
           <CheckBox Content="Show TX" IsChecked="{Binding ShowTx}" VerticalAlignment="Center" Margin="10,0,0,0" />
           <CheckBox Content="Errors only" IsChecked="{Binding ErrorsOnly}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource FailBrush}" />
+          <Button Content="⟲ Clear" Command="{Binding ClearCommand}" Margin="12,0,0,0" ToolTip="Remove all rows from the monitor" />
         </StackPanel>
         <TextBlock DockPanel.Dock="Right" Text="Latest value per CAN ID" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" />
       </DockPanel>
@@ -47,7 +48,7 @@
           <DataGridTextColumn Header="Message" Binding="{Binding MessageName}" Width="150" />
           <DataGridTextColumn Header="Dir" Binding="{Binding Direction}" Width="55" />
           <DataGridTextColumn Header="DLC" Binding="{Binding Dlc}" Width="50" />
-          <DataGridTextColumn Header="Payload (Hex)" Binding="{Binding Payload}" Width="*">
+          <DataGridTextColumn Header="Payload (Hex)" Binding="{Binding Payload}" Width="220">
             <DataGridTextColumn.ElementStyle>
               <Style TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{DynamicResource MonoFontFamily}" />
@@ -55,6 +56,7 @@
               </Style>
             </DataGridTextColumn.ElementStyle>
           </DataGridTextColumn>
+          <DataGridTextColumn Header="Decoded Summary / Signals" Binding="{Binding Summary}" Width="*" />
           <DataGridTextColumn Header="Cycle (ms)" Binding="{Binding CycleTimeMs, StringFormat=F2}" Width="90" />
           <DataGridTextColumn Header="Count" Binding="{Binding ReceiveCount}" Width="90" />
           <DataGridTextColumn Header="Last Received" Binding="{Binding LastReceived, StringFormat=HH:mm:ss.fff}" Width="130" />

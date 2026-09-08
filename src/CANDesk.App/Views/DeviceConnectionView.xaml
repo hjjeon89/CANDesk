@@ -31,16 +31,17 @@
                   Command="{Binding DataContext.ConnectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                   Style="{StaticResource PrimaryButtonStyle}"
                   Margin="10,0,0,0" />
+          <Button Content="⏻ Disconnect"
+                  Command="{Binding DataContext.DisconnectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                  Margin="6,0,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
           <Button Content="{Binding DataContext.CaptureCommandText, RelativeSource={RelativeSource AncestorType=Window}}"
                   Command="{Binding DataContext.ToggleCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
           <Button Content="⟲ Clear"
                   Command="{Binding DataContext.ClearTraceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                  Margin="5,0,0,0" />
-          <ToggleButton Content="⚡ Auto Scroll"
-                        IsChecked="{Binding DataContext.IsAutoScroll, RelativeSource={RelativeSource AncestorType=Window}}"
-                        Margin="5,0,0,0" />
+                  Margin="5,0,0,0"
+                  ToolTip="Clear both Message Monitor and Trace" />
         </StackPanel>
       </Grid>
       <Border Grid.Row="1"

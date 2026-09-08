@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Threading;
 using System.Windows;
-using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CANDesk.Core.Dispatch;
@@ -27,33 +25,28 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private long _txFrameCount;
     private long _busBitsAccumulated;
     public event EventHandler? MessageEditorRequested;
-    public ObservableCollection<TraceFrameRow> Frames { get; } = [];
-    public ICollectionView TraceFramesView { get; }
+    public event EventHandler? SignalMonitorRequested;
     public MessageMonitorViewModel Monitor { get; } = new();
+    public SignalMonitorViewModel SignalMonitor { get; } = new();
     public TraceLogViewModel TraceLog { get; } = new();
     public DbcSignalTreeViewModel DbcSignalTree { get; } = new();
     public MessageDbEditorViewModel MessageDbEditor { get; } = new();
     public TransmitPanelViewModel TransmitPanel { get; } = new();
-    public ObservableCollection<MessageTreeItem> MessageTree { get; } =
-    [new("0x100", "EngineStatus", "10ms · DLC:8", [new("EngineSpeed", "2,450 rpm"), new("CoolantTemp", "87.5 °C"), new("EngineState", "Running")]), new("0x200", "BatteryPackStatus", "50ms · DLC:8", [new("PackVoltage", "398.2 V"), new("PackCurrent", "-24.5 A"), new("StateOfCharge", "78 %")]), new("0x301", "VCU_Control", "Cyclic · DLC:8", [new("TorqueRequest", "120 Nm"), new("RollingCounter", "0")])];
-    public ObservableCollection<TxJobRow> TxJobs { get; } = [new("0x301", "VCU_Control", "20 ms", "8", "AA BB CC 00 00 00 00 12", true, true, true), new("0x7DF", "OBD-II Req (Tester)", "Manual", "8", "02 01 0C 55 55 55 55 55", false, false, false)];
     [ObservableProperty] private string _status = "Disconnected";
     [ObservableProperty] private string _lastDeviceError = string.Empty;
     [ObservableProperty] private bool _isCapturing = true;
-    [ObservableProperty] private bool _isAutoScroll = true;
     [ObservableProperty] private bool _isRawMode;
     [ObservableProperty] private bool _isDecodedMode = true;
-    [ObservableProperty] private bool _showRx = true;
-    [ObservableProperty] private bool _showTx = true;
-    [ObservableProperty] private bool _errorsOnly;
     [ObservableProperty] private string _signalSearch = string.Empty;
-    [ObservableProperty] private string _traceFilterText = string.Empty;
-    [ObservableProperty] private TraceFrameRow _selectedFrame = TraceFrameRow.Empty;
     // Message Monitor (index 1) is the default landing tab; Trace is opt-in via the tab strip.
     [ObservableProperty] private int _selectedCenterTabIndex = 1;
     [ObservableProperty] private int _selectedLeftTabIndex;
     public string CaptureCommandText => IsCapturing ? "Pause" : "Start";
     public DeviceConnectionViewModel Connection { get; }
+    // "Opening" briefly disables both buttons so a double-click can't fire overlapping connect
+    // attempts; every other status (including BusOff/Faulted) still allows a fresh Connect to recover.
+    public bool CanConnect => Status != "Opening";
+    public bool CanDisconnect => Status is "Open" or "BusOff" or "Faulted";
     public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {Connection.SelectedNominalTiming}" : "Disconnected";
     public string BusStatusText => Status switch
     {
@@ -84,8 +77,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _connection = connection;
         Connection = connectionViewModel;
         _dispatcher = CreateDispatcher();
-        TraceFramesView = CollectionViewSource.GetDefaultView(Frames);
-        TraceFramesView.Filter = MatchesTraceFilter;
         DbcSignalTree.SendToTransmitRequested += message =>
         {
             TransmitPanel.AddJobFromMessage(message);
@@ -121,6 +112,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             {
                 TraceLog.ProcessTransmittedFrame(frame);
                 Monitor.ProcessTransmittedFrame(frame);
+                SignalMonitor.ProcessTransmittedFrame(frame);
             });
         };
         TransmitPanel.SetScheduler(txScheduler);
@@ -145,6 +137,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [RelayCommand]
     private void OpenMessageEditor() => MessageEditorRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void OpenSignalMonitor() => SignalMonitorRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
     private void UndoMessageEdit()
@@ -179,6 +174,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var database = await new DbcParser().ParseAsync(stream);
             DbcSignalTree.Load(database);
             TraceLog.SetDatabase(database);
+            Monitor.SetDatabase(database);
+            SignalMonitor.SetDatabase(database);
             SelectedLeftTabIndex = 0;
             LastDeviceError = string.Empty;
         }
@@ -207,7 +204,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         await File.WriteAllLinesAsync(dialog.FileName, lines);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanDisconnect))]
     private async Task DisconnectAsync()
     {
         if (_txScheduler is not null)
@@ -241,12 +238,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         TraceLog.Clear();
         Monitor.Clear();
     }
-    [RelayCommand] private async Task Connect()
+    [RelayCommand(CanExecute = nameof(CanConnect))] private async Task Connect()
     {
         var configuration = Connection.BuildConfiguration();
         await _dispatcher.DisposeAsync();
         _dispatcher = CreateDispatcher();
-        await _connection.ConnectMockAsync(configuration);
+        try
+        {
+            await _connection.ConnectByVendorAsync(Connection.SelectedVendor, Connection.SelectedChannel, configuration);
+        }
+        catch (Exception exception)
+        {
+            LastDeviceError = $"Connect failed: {exception.Message}";
+            return;
+        }
+
+        LastDeviceError = string.Empty;
         await AttachCurrentDeviceAsync();
     }
     partial void OnStatusChanged(string value)
@@ -254,6 +261,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(DeviceStatusText));
         OnPropertyChanged(nameof(BusStatusText));
         OnPropertyChanged(nameof(BusStatusBrush));
+        OnPropertyChanged(nameof(CanConnect));
+        OnPropertyChanged(nameof(CanDisconnect));
+        ConnectCommand.NotifyCanExecuteChanged();
+        DisconnectCommand.NotifyCanExecuteChanged();
     }
     private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames)
     {
@@ -269,6 +280,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (!IsCapturing) return;
             Monitor.ProcessFrames(frames);
             TraceLog.ProcessFrames(frames);
+            SignalMonitor.ProcessFrames(frames);
             OnPropertyChanged(nameof(DroppedFrameCount));
             OnPropertyChanged(nameof(DroppedFrameBrush));
         });
@@ -309,20 +321,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(BusLoadBarWidth));
     }
 
-    partial void OnTraceFilterTextChanged(string value) => TraceFramesView.Refresh();
-    partial void OnShowRxChanged(bool value) => TraceFramesView.Refresh();
-    partial void OnShowTxChanged(bool value) => TraceFramesView.Refresh();
-    partial void OnErrorsOnlyChanged(bool value) => TraceFramesView.Refresh();
-
-    private bool MatchesTraceFilter(object item)
-    {
-        if (item is not TraceFrameRow frame) return false;
-        if (ErrorsOnly && frame.Direction != "ERR") return false;
-        if (frame.Direction == "RX" && !ShowRx) return false;
-        if (frame.Direction == "TX" && !ShowTx) return false;
-        return string.IsNullOrWhiteSpace(TraceFilterText) || frame.Id.Contains(TraceFilterText.Trim(), StringComparison.OrdinalIgnoreCase);
-    }
-
     private RxDispatcher CreateDispatcher()
     {
         var dispatcher = new RxDispatcher();
@@ -344,7 +342,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         try
         {
-            _ = dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+            // Normal, not Background: Background (4) sits below Input/Loaded/Render/DataBind (5-8)
+            // in the Dispatcher queue, so under any sustained UI activity (grid virtualization,
+            // hover, scrolling) RX frame delivery to Monitor/Trace kept getting starved behind that
+            // other work, showing up as visibly laggy/batched updates instead of near-live ones.
+            _ = dispatcher.BeginInvoke(action, DispatcherPriority.Normal);
         }
         catch (InvalidOperationException) when (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
         {

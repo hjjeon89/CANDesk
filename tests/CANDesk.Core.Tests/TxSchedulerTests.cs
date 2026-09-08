@@ -23,6 +23,27 @@ public sealed class TxSchedulerTests
     }
 
     [Fact]
+    public async Task ScheduleCyclic_RaisesFrameSent_OnEveryTick()
+    {
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sentCount = 0;
+        var sawThreeSends = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.FrameSent += (_, _) =>
+        {
+            if (Interlocked.Increment(ref sentCount) >= 3)
+            {
+                sawThreeSends.TrySetResult();
+            }
+        };
+
+        var jobId = scheduler.ScheduleCyclic(CanFrame.Create(0x300, [0x00]), TimeSpan.FromMilliseconds(5));
+
+        await sawThreeSends.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        scheduler.Cancel(jobId);
+    }
+
+    [Fact]
     public async Task SendOnceAsync_RaisesFrameSent_ForRateAndTraceObservers()
     {
         var device = new RecordingCanDevice();

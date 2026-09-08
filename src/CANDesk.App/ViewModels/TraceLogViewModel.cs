@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -20,7 +21,7 @@ public sealed partial class TraceLogViewModel : ObservableObject
     private IMessageDatabase? _database;
     private SignalDecoder? _decoder;
 
-    public ObservableCollection<TraceFrameRow> Frames { get; } = [];
+    public TraceFrameCollection Frames { get; } = [];
     public ICollectionView FramesView { get; }
 
     [ObservableProperty] private bool _showRx = true;
@@ -28,6 +29,9 @@ public sealed partial class TraceLogViewModel : ObservableObject
     [ObservableProperty] private bool _errorsOnly;
     [ObservableProperty] private string _filterText = string.Empty;
     [ObservableProperty] private TraceFrameRow _selectedFrame = TraceFrameRow.Empty;
+    // Trace grows fast under real traffic; auto-scroll defaults on so the newest frame stays visible
+    // without the user having to keep dragging the scrollbar down.
+    [ObservableProperty] private bool _isAutoScroll = true;
     // Trace recording starts off; the user opts in via Start rather than logging by default.
     [ObservableProperty] private TraceCaptureStatus _captureStatus = TraceCaptureStatus.Stopped;
 
@@ -55,8 +59,18 @@ public sealed partial class TraceLogViewModel : ObservableObject
         FramesView.Filter = Matches;
     }
 
+    // Resuming from Paused keeps what's already recorded; starting fresh from Stopped clears it
+    // first — Stop ends a session, Pause just suspends it mid-session.
     [RelayCommand(CanExecute = nameof(CanStart))]
-    private void Start() => CaptureStatus = TraceCaptureStatus.Running;
+    private void Start()
+    {
+        if (CaptureStatus == TraceCaptureStatus.Stopped)
+        {
+            Clear();
+        }
+
+        CaptureStatus = TraceCaptureStatus.Running;
+    }
 
     [RelayCommand(CanExecute = nameof(CanPause))]
     private void Pause() => CaptureStatus = TraceCaptureStatus.Paused;
@@ -133,16 +147,19 @@ public sealed partial class TraceLogViewModel : ObservableObject
 
     private void TrimToCapacity()
     {
-        while (Frames.Count > 10_000)
+        const int maxFrames = 10_000;
+        if (Frames.Count > maxFrames)
         {
-            Frames.RemoveAt(0);
+            Frames.TrimFront(Frames.Count - maxFrames);
         }
     }
 
+    [RelayCommand]
     public void Clear()
     {
         Frames.Clear();
         SelectedFrame = TraceFrameRow.Empty;
+        Interlocked.Exchange(ref _sequence, 0);
     }
 
     partial void OnFilterTextChanged(string value) => FramesView.Refresh();
@@ -169,5 +186,39 @@ public sealed partial class TraceLogViewModel : ObservableObject
 
         return string.IsNullOrWhiteSpace(FilterText)
             || frame.Id.Contains(FilterText.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+/// <summary>
+/// <see cref="ObservableCollection{T}"/> with a bulk front-trim used to cap trace history.
+/// Plain <c>RemoveAt(0)</c> called once per incoming frame shifts up to the full buffer and
+/// raises one CollectionChanged per removal, which visibly stalls the UI under sustained
+/// high-rate CAN traffic. <see cref="TrimFront"/> drops the whole excess in a single
+/// <see cref="List{T}.RemoveRange"/> and raises one Reset notification instead.
+/// </summary>
+public sealed class TraceFrameCollection : ObservableCollection<TraceFrameRow>
+{
+    public void TrimFront(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        if (Items is List<TraceFrameRow> list)
+        {
+            list.RemoveRange(0, count);
+        }
+        else
+        {
+            for (var i = 0; i < count; i++)
+            {
+                Items.RemoveAt(0);
+            }
+        }
+
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
     }
 }
