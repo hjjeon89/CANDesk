@@ -12,6 +12,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CANDesk.App", "src\CANDesk.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CANDesk.Core.Tests", "tests\CANDesk.Core.Tests\CANDesk.Core.Tests.csproj", "{8D56B0B1-E218-4A40-AAB1-F97CF08EE1A7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CANDesk.Hal.Peak", "src\CANDesk.Hal.Peak\CANDesk.Hal.Peak.csproj", "{4A1B7B3E-8C2E-4B2E-9D7F-1B7E5F6A2C11}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CANDesk.Hal.Vector", "src\CANDesk.Hal.Vector\CANDesk.Hal.Vector.csproj", "{6F2C9D4A-3E7B-4F1A-8E2D-2C9A6B4F1D22}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,5 +42,13 @@ Global
 		{8D56B0B1-E218-4A40-AAB1-F97CF08EE1A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8D56B0B1-E218-4A40-AAB1-F97CF08EE1A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8D56B0B1-E218-4A40-AAB1-F97CF08EE1A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4A1B7B3E-8C2E-4B2E-9D7F-1B7E5F6A2C11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4A1B7B3E-8C2E-4B2E-9D7F-1B7E5F6A2C11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4A1B7B3E-8C2E-4B2E-9D7F-1B7E5F6A2C11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4A1B7B3E-8C2E-4B2E-9D7F-1B7E5F6A2C11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F2C9D4A-3E7B-4F1A-8E2D-2C9A6B4F1D22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F2C9D4A-3E7B-4F1A-8E2D-2C9A6B4F1D22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F2C9D4A-3E7B-4F1A-8E2D-2C9A6B4F1D22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F2C9D4A-3E7B-4F1A-8E2D-2C9A6B4F1D22}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

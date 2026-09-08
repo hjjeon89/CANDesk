@@ -3,8 +3,15 @@
   <ItemGroup>
     <ProjectReference Include="..\CANDesk.Hal\CANDesk.Hal.csproj" />
     <ProjectReference Include="..\CANDesk.Core\CANDesk.Core.csproj" />
-    <ProjectReference Include="..\CANDesk.Hal.Mock\CANDesk.Hal.Mock.csproj" />
+    <ProjectReference Include="..\CANDesk.Hal.Peak\CANDesk.Hal.Peak.csproj" />
+    <ProjectReference Include="..\CANDesk.Hal.Vector\CANDesk.Hal.Vector.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Vector XL Driver Library redistributable, not committed to the repo. Copied next to
+         CANDesk.App.exe whenever present so VectorCanDeviceFactory's P/Invoke can find it; absent,
+         it just means Vector stays unavailable in the UI (see vendor/README.md). -->
+    <None Include="vendor\vxlapi64.dll" Condition="Exists('vendor\vxlapi64.dll')" CopyToOutputDirectory="PreserveNewest" Link="vxlapi64.dll" />
   </ItemGroup>
 </Project>

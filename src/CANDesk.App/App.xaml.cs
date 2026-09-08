@@ -15,7 +15,8 @@ public partial class App : Application
         {
             services.AddSingleton<CANDesk.Hal.IBitrateTableProvider, CANDesk.Hal.BitrateTableProvider>();
             services.AddSingleton<CANDesk.Hal.IBitTimingCalculator, CANDesk.Hal.BitTimingCalculator>();
-            services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Mock.MockCanDeviceFactory>();
+            services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Peak.PeakCanDeviceFactory>();
+            services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Vector.VectorCanDeviceFactory>();
             services.AddSingleton<DeviceConnectionService>();
             services.AddSingleton<DeviceConnectionViewModel>();
             services.AddSingleton<MainViewModel>();
@@ -23,10 +24,10 @@ public partial class App : Application
         }).Build();
         await _host.StartAsync();
         _connection = _host.Services.GetRequiredService<DeviceConnectionService>();
-        var connectionViewModel = _host.Services.GetRequiredService<DeviceConnectionViewModel>();
-        await _connection.ConnectMockAsync(connectionViewModel.BuildConfiguration());
+        // No auto-connect at startup: the app opens disconnected and the user picks a real vendor
+        // and channel, then hits Connect (MainViewModel.Connect already calls AttachCurrentDeviceAsync
+        // once that succeeds).
         _mainViewModel = _host.Services.GetRequiredService<MainViewModel>();
-        await _mainViewModel.AttachCurrentDeviceAsync();
         _host.Services.GetRequiredService<MainWindow>().Show();
     }
 

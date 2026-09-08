@@ -12,13 +12,13 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     private readonly IBitrateTableProvider _bitrateTable;
     private readonly IBitTimingCalculator _timingCalculator;
     private const int DefaultControllerClockHz = 80_000_000;
-    public IReadOnlyList<string> Vendors { get; } = ["Mock (Loopback)", "PEAK", "Kvaser", "Vector", "CANable"];
-    public IReadOnlyList<string> Channels { get; } = ["Mock Channel 0", "Channel 1", "Channel 2"];
+    public IReadOnlyList<string> Vendors { get; } = ["PEAK", "Kvaser", "Vector", "CANable"];
+    public IReadOnlyList<string> Channels { get; } = ["Channel 1", "Channel 2"];
     public IReadOnlyList<BitTimingSetting> NominalPresets { get; }
     public IReadOnlyList<BitTimingSetting> DataPresets { get; }
 
-    [ObservableProperty] private string _selectedVendor = "Mock (Loopback)";
-    [ObservableProperty] private string _selectedChannel = "Mock Channel 0";
+    [ObservableProperty] private string _selectedVendor = "PEAK";
+    [ObservableProperty] private string _selectedChannel = "Channel 1";
     [ObservableProperty] private CanBusMode _mode = CanBusMode.Classic;
     [ObservableProperty] private BitTimingSetting _selectedNominalTiming;
     [ObservableProperty] private BitTimingSetting _selectedDataTiming;

@@ -211,3 +211,13 @@ public interface ICanDeviceFactory
     Task<IReadOnlyList<CanDeviceDescriptor>> EnumerateAsync(CancellationToken cancellationToken = default);
     Task<ICanDevice> CreateAsync(string deviceId, string channelName, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Optional companion to <see cref="ICanDeviceFactory"/> for factories whose enumeration
+/// goes through several vendor SDK calls that can each fail independently (e.g. Vector's
+/// app-channel lookup). When <see cref="EnumerateAsync"/> finds nothing, callers can check for this
+/// interface and surface <see cref="LastEnumerationDiagnostics"/> to explain which specific call
+/// returned what, instead of a bare "no channel found".</summary>
+public interface ICanDeviceFactoryDiagnostics
+{
+    string LastEnumerationDiagnostics { get; }
+}
