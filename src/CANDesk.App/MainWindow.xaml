@@ -28,7 +28,7 @@
             <MenuItem Header="Clear Trace" Command="{Binding ClearTraceCommand}" />
           </MenuItem>
           <MenuItem Header="_View">
-            <MenuItem Header="Auto Scroll" IsCheckable="True" IsChecked="{Binding IsAutoScroll}" />
+            <MenuItem Header="Auto Scroll" IsCheckable="True" IsChecked="{Binding TraceLog.IsAutoScroll}" />
             <MenuItem Header="Raw Hex View" IsCheckable="True" IsChecked="{Binding IsRawMode}" />
             <MenuItem Header="Decoded Signal View" IsCheckable="True" IsChecked="{Binding IsDecodedMode}" />
           </MenuItem>
@@ -40,6 +40,7 @@
           <MenuItem Header="_Tools">
             <MenuItem Header="Load DBC..." Command="{Binding OpenDatabaseCommand}" />
             <MenuItem Header="Message DB Editor" Command="{Binding OpenMessageEditorCommand}" />
+            <MenuItem Header="Signal Monitor" Command="{Binding OpenSignalMonitorCommand}" />
             <MenuItem Header="Settings" />
           </MenuItem>
           <MenuItem Header="_Help">
