@@ -24,6 +24,11 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
     private Task? _readLoop;
     private int _portHandle;
     private int _disposeState;
+    // xlEvent.TimeStamp is nanoseconds since an arbitrary driver epoch, not wall-clock time.
+    // xlResetClock zeroes it at Open so anchoring it to the wall clock here gives each frame a real
+    // SystemTime instead of the dequeue-time DateTime.UtcNow this replaced, which added
+    // notification/polling-loop jitter noise to Monitor/Trace's Cycle Time readings.
+    private DateTime _timeBaseUtc;
 
     public string ChannelName { get; } = channelName;
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
@@ -74,6 +79,12 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
             {
                 throw new InvalidOperationException($"xlActivateChannel failed for channel mask 0x{channelMask:X}: XL status {activateStatus}.");
             }
+
+            // Best-effort: even if this fails, _timeBaseUtc is still anchored to "now" below, which
+            // keeps Cycle Time deltas between consecutive frames correct regardless of whatever
+            // absolute value the driver's clock happens to already be at.
+            VectorXlNative.ResetClock(portHandle);
+            _timeBaseUtc = DateTime.UtcNow;
 
             var notifyStatus = VectorXlNative.SetNotification(portHandle, out var xlHandle, queueLevel: 1);
             if (notifyStatus == 0 && xlHandle != 0)
@@ -228,7 +239,8 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
             if ((flags & VectorXlNative.CanMsgFlagErrorFrame) != 0) canFlags |= CanFrameFlags.ErrorFrame;
 
             var length = Math.Min(dlc, (ushort)8);
-            var frame = CanFrame.Create(id & ~VectorXlNative.ExtendedMessageIdFlag, data.AsSpan(0, length), canFlags);
+            var systemTime = _timeBaseUtc.AddTicks((long)(xlEvent.TimeStamp / 100UL)); // 100 ns per tick
+            var frame = CanFrame.Create(id & ~VectorXlNative.ExtendedMessageIdFlag, data.AsSpan(0, length), canFlags, systemTime: systemTime);
             _frames.Writer.TryWrite(frame);
         }
     }

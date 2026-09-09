@@ -24,6 +24,11 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
     private Task? _readLoop;
     private Task? _statusLoop;
     private int _disposeState;
+    // TPCANTimestamp is a millisecond counter that (per PCAN-Basic's documented behavior) restarts
+    // near zero at CAN_Initialize, not a wall-clock time — anchoring it to the wall clock at Open
+    // gives each frame a real SystemTime instead of the dequeue-time DateTime.UtcNow this replaced,
+    // which added polling-loop/scheduler jitter noise to Monitor/Trace's Cycle Time readings.
+    private DateTime _timeBaseUtc;
 
     public string ChannelName { get; } = channelName;
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
@@ -56,6 +61,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
             throw new InvalidOperationException($"CAN_Initialize failed for channel 0x{channel:X}: PCAN status 0x{result:X}.");
         }
 
+        _timeBaseUtc = DateTime.UtcNow;
         var sessionCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, cancellationToken);
         _sessionCancellation = sessionCancellation;
         SetStatus(CanDeviceStatus.Open);
@@ -145,7 +151,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
         {
             while (!ct.IsCancellationRequested)
             {
-                var result = PCanBasicNative.Read(channel, out var message, out _);
+                var result = PCanBasicNative.Read(channel, out var message, out var timestamp);
                 if (result == PCanBasicNative.StatusQueueReceiveEmpty)
                 {
                     await Task.Delay(PollInterval, ct).ConfigureAwait(false);
@@ -166,7 +172,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
                     continue;
                 }
 
-                _frames.Writer.TryWrite(ToCanFrame(message));
+                _frames.Writer.TryWrite(ToCanFrame(message, _timeBaseUtc, timestamp));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -208,7 +214,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
         _ => CanErrorKind.Driver,
     };
 
-    private static unsafe CanFrame ToCanFrame(in PCanBasicNative.TPCANMsg message)
+    private static unsafe CanFrame ToCanFrame(in PCanBasicNative.TPCANMsg message, DateTime timeBaseUtc, in PCanBasicNative.TPCANTimestamp timestamp)
     {
         var flags = CanFrameFlags.None;
         if ((message.MsgType & PCanBasicNative.MessageExtended) != 0) flags |= CanFrameFlags.Extended;
@@ -222,7 +228,13 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
             payload[i] = message.Data[i];
         }
 
-        return CanFrame.Create(message.Id, payload, flags);
+        // Millis wraps at 2^32; MillisOverflow counts how many times it has. Reconstructing the
+        // full elapsed time from all three fields (rather than dequeue-time DateTime.UtcNow) gives
+        // Monitor/Trace the driver's own capture time, free of polling-loop jitter.
+        var elapsedMs = timestamp.Millis + timestamp.MillisOverflow * 4_294_967_296.0;
+        var systemTime = timeBaseUtc.AddMilliseconds(elapsedMs).AddTicks(timestamp.Micros * 10L);
+
+        return CanFrame.Create(message.Id, payload, flags, systemTime: systemTime);
     }
 
     private void EnsureOpen()
