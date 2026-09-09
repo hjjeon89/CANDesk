@@ -6,7 +6,7 @@
     <Border Style="{StaticResource SearchBoxContainerStyle}">
       <TextBox Style="{StaticResource SearchTextBoxStyle}" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search Message / Signal..." />
     </Border>
-    <TreeView Grid.Row="1" ItemsSource="{Binding Messages}" Margin="0,8,0,0">
+    <TreeView Grid.Row="1" ItemsSource="{Binding MessagesView}" Margin="0,8,0,0">
       <TreeView.ItemTemplate>
         <HierarchicalDataTemplate ItemsSource="{Binding Signals}">
           <StackPanel Orientation="Horizontal">
@@ -23,8 +23,8 @@
           <HierarchicalDataTemplate.ItemTemplate>
             <DataTemplate>
               <DockPanel MinWidth="180">
-                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSubBrush}" VerticalAlignment="Center" />
-                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" Foreground="{DynamicResource PassBrush}" FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="11" HorizontalAlignment="Right" Margin="14,0,0,0" />
+                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextSubBrush}" VerticalAlignment="Center" ToolTip="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" Foreground="{DynamicResource PassBrush}" FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="11" HorizontalAlignment="Right" Margin="14,0,0,0" ToolTip="{Binding Value}" TextTrimming="CharacterEllipsis" />
               </DockPanel>
             </DataTemplate>
           </HierarchicalDataTemplate.ItemTemplate>

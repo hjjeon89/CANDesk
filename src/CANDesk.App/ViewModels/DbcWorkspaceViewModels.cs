@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Windows.Data;
 using CANDesk.Core.MessageDb;
 using CANDesk.Core.Scheduling;
 using CANDesk.Hal;
@@ -41,8 +42,21 @@ public sealed partial class DbcSignalTreeViewModel : ObservableObject
     [ObservableProperty]
     private string _searchText = string.Empty;
 
+    /// <summary>Filtered view of <see cref="Messages"/> the tree actually binds to — a message
+    /// stays visible if its own name/ID matches <see cref="SearchText"/>, or if any of its signals
+    /// do (searching for a signal name should surface the message that carries it). Needed once a
+    /// real DBC is loaded: large vehicle DBCs can carry thousands of signals across hundreds of
+    /// messages, far more than a flat scroll is comfortable to hunt through.</summary>
+    public ICollectionView MessagesView { get; }
+
     /// <summary>Raised when the user asks to create a Transmit job from a message (e.g. via "+ TX").</summary>
     public event Action<DbcMessage>? SendToTransmitRequested;
+
+    public DbcSignalTreeViewModel()
+    {
+        MessagesView = CollectionViewSource.GetDefaultView(Messages);
+        MessagesView.Filter = Matches;
+    }
 
     public void Load(IMessageDatabase database)
     {
@@ -55,6 +69,26 @@ public sealed partial class DbcSignalTreeViewModel : ObservableObject
                 .ToArray();
             Messages.Add(new MessageTreeItem($"0x{message.CanId:X3}", message.Name, $"DLC: {message.Dlc}", signals, message));
         }
+    }
+
+    partial void OnSearchTextChanged(string value) => MessagesView.Refresh();
+
+    private bool Matches(object item)
+    {
+        if (item is not MessageTreeItem message)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            return true;
+        }
+
+        var term = SearchText.Trim();
+        return message.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || message.Id.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || message.Signals.Any(signal => signal.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     [RelayCommand(CanExecute = nameof(CanSendToTransmit))]

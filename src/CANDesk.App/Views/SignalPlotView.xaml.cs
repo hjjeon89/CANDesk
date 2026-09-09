@@ -62,6 +62,15 @@ public partial class SignalPlotView : UserControl
         Redraw();
     }
 
+    // One color/axis pair per plotted series (max is SignalPlotViewModel.MaxSelectedSignals = 4).
+    // Giving every series its own Y-axis is what actually fixes the "small-unit signal looks flat"
+    // problem a shared axis has: a 0/1 relay state or a °C temperature next to an rpm signal would
+    // otherwise be squashed to a barely-visible line by the rpm signal's much larger range.
+    private static readonly ScottPlot.Color[] SeriesColors =
+    [
+        ScottPlot.Colors.SteelBlue, ScottPlot.Colors.OrangeRed, ScottPlot.Colors.SeaGreen, ScottPlot.Colors.MediumPurple,
+    ];
+
     private void Redraw()
     {
         if (DataContext is not SignalPlotViewModel viewModel)
@@ -71,15 +80,26 @@ public partial class SignalPlotView : UserControl
 
         var series = viewModel.GetSelectedSeriesSnapshot();
         Plot.Plot.Clear();
-        foreach (var s in series)
+
+        for (var i = 0; i < series.Count; i++)
         {
+            var s = series[i];
             if (s.Data.Times.Length == 0)
             {
                 continue;
             }
 
+            var color = SeriesColors[i % SeriesColors.Length];
+            var yAxis = i == 0 ? Plot.Plot.Axes.Left : (i % 2 == 1 ? Plot.Plot.Axes.AddRightAxis() : Plot.Plot.Axes.AddLeftAxis());
+            yAxis.Label.Text = s.Label;
+            yAxis.Label.ForeColor = color;
+            yAxis.FrameLineStyle.Color = color;
+            yAxis.TickLabelStyle.ForeColor = color;
+
             var scatter = Plot.Plot.Add.Scatter(s.Data.Times, s.Data.Values);
             scatter.LegendText = s.Label;
+            scatter.Color = color;
+            scatter.Axes.YAxis = yAxis;
         }
 
         Plot.Plot.Axes.AutoScale();

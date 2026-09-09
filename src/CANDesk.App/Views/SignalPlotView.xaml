@@ -20,8 +20,11 @@
             </UniformGrid>
           </StackPanel>
         </Border>
+        <Border DockPanel.Dock="Top" Style="{StaticResource SearchBoxContainerStyle}" Margin="0,6,0,0">
+          <TextBox Style="{StaticResource SearchTextBoxStyle}" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search signals..." />
+        </Border>
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding AvailableSignals}" Margin="8">
+          <ItemsControl ItemsSource="{Binding AvailableSignalsView}" Margin="8">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
                 <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Margin="0,3" ToolTip="{Binding Label}" />

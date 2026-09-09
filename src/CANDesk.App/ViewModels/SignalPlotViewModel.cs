@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Windows.Data;
 using CANDesk.Core.Dispatch;
 using CANDesk.Core.MessageDb;
 using CANDesk.Hal;
@@ -29,6 +30,33 @@ public sealed partial class SignalPlotViewModel : ObservableObject
     private DateTime? _plotStartUtc;
 
     public ObservableCollection<PlotSignalOption> AvailableSignals { get; } = [];
+
+    /// <summary>Filtered view of <see cref="AvailableSignals"/> the picker binds to. Large DBCs can
+    /// carry thousands of signals, far more than a flat scrollable checkbox list is comfortable to
+    /// search through — see <see cref="FilterText"/>.</summary>
+    public ICollectionView AvailableSignalsView { get; }
+
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    public SignalPlotViewModel()
+    {
+        AvailableSignalsView = CollectionViewSource.GetDefaultView(AvailableSignals);
+        AvailableSignalsView.Filter = Matches;
+    }
+
+    partial void OnFilterTextChanged(string value) => AvailableSignalsView.Refresh();
+
+    private bool Matches(object item)
+    {
+        if (item is not PlotSignalOption option)
+        {
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(FilterText)
+            || option.Label.Contains(FilterText.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>Gates both new-sample capture (<see cref="Apply"/>) and the view's redraw loop.
     /// Defaults to false: the plot stays idle until the user explicitly presses Start, rather than
@@ -108,8 +136,22 @@ public sealed partial class SignalPlotViewModel : ObservableObject
         }
     }
 
+    // Batched rather than run on every single incoming frame: at bus speed (or 1kHz+ CAN-FD
+    // traffic) that would mean an O(n) FindIndex+RemoveRange per series on every frame just to
+    // trim a couple of stale samples off the front. A ~1s cadence is plenty responsive for a 2-
+    // minute retention window and cuts the pruning cost by orders of magnitude under sustained load.
+    private static readonly TimeSpan PruneInterval = TimeSpan.FromSeconds(1);
+    private DateTime? _lastPruneUtc;
+
     private void PruneOldSamples(DateTime latestSampleUtc)
     {
+        if (_lastPruneUtc is not null && latestSampleUtc - _lastPruneUtc.Value < PruneInterval)
+        {
+            return;
+        }
+
+        _lastPruneUtc = latestSampleUtc;
+
         var cutoffSeconds = (latestSampleUtc - _plotStartUtc!.Value).TotalSeconds - RetentionWindow.TotalSeconds;
         if (cutoffSeconds <= 0)
         {
@@ -160,6 +202,7 @@ public sealed partial class SignalPlotViewModel : ObservableObject
         }
 
         _plotStartUtc = null;
+        _lastPruneUtc = null;
         Cleared?.Invoke(this, EventArgs.Empty);
     }
 
