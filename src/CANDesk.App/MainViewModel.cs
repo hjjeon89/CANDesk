@@ -38,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public event EventHandler? SignalMonitorRequested;
     public MessageMonitorViewModel Monitor { get; } = new();
     public SignalMonitorViewModel SignalMonitor { get; } = new();
+    public SignalPlotViewModel SignalPlot { get; } = new();
     public TraceLogViewModel TraceLog { get; } = new();
     public DbcSignalTreeViewModel DbcSignalTree { get; } = new();
     public MessageDbEditorViewModel MessageDbEditor { get; } = new();
@@ -124,6 +125,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 TraceLog.ProcessTransmittedFrame(frame);
                 Monitor.ProcessTransmittedFrame(frame);
                 SignalMonitor.ProcessTransmittedFrame(frame);
+                SignalPlot.ProcessTransmittedFrame(frame);
             });
         };
         TransmitPanel.SetScheduler(txScheduler);
@@ -187,6 +189,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             TraceLog.SetDatabase(database);
             Monitor.SetDatabase(database);
             SignalMonitor.SetDatabase(database);
+            SignalPlot.SetDatabase(database);
             SelectedLeftTabIndex = 0;
             LastDeviceError = string.Empty;
         }
@@ -314,6 +317,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Monitor.ProcessFrames(rxFrames);
             TraceLog.ProcessFrames(rxFrames);
             SignalMonitor.ProcessFrames(rxFrames);
+            SignalPlot.ProcessFrames(rxFrames);
             OnPropertyChanged(nameof(DroppedFrameCount));
             OnPropertyChanged(nameof(DroppedFrameBrush));
         });

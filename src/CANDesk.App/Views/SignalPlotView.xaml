@@ -1,0 +1,38 @@
+<UserControl x:Class="CANDesk.App.Views.SignalPlotView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF">
+  <Grid Margin="8">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220" />
+      <ColumnDefinition Width="8" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <Border Style="{StaticResource PanelCardStyle}">
+      <DockPanel>
+        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeaderStyle}">
+          <StackPanel>
+            <TextBlock Text="Signals (max 4)" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <UniformGrid Rows="1" Columns="3">
+              <Button Content="▶ Start" Command="{Binding StartCommand}" Margin="0,0,2,0" ToolTip="Start live plotting" />
+              <Button Content="■ Stop" Command="{Binding StopCommand}" Margin="2,0,2,0" ToolTip="Freeze the plot so you can zoom/pan" />
+              <Button Content="⟲ Clear" Command="{Binding ClearCommand}" Margin="2,0,0,0" ToolTip="Reset all plotted series" />
+            </UniformGrid>
+          </StackPanel>
+        </Border>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding AvailableSignals}" Margin="8">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Margin="0,3" ToolTip="{Binding Label}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+    <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}">
+      <sp:WpfPlot x:Name="Plot" />
+    </Border>
+  </Grid>
+</UserControl>

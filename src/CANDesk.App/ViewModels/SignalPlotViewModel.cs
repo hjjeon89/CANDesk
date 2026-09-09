@@ -1,0 +1,236 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using CANDesk.Core.Dispatch;
+using CANDesk.Core.MessageDb;
+using CANDesk.Hal;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace CANDesk.App.ViewModels;
+
+/// <summary>
+/// Backs the Signal Plot tab: lets the user pick up to <see cref="MaxSelectedSignals"/> decoded
+/// signals from the loaded DBC and keeps a rolling time-series buffer (seconds since the plot was
+/// last cleared, on the X axis) for each. <see cref="SignalPlotView"/> redraws from these buffers
+/// on its own timer rather than per frame — the same "coalesce, don't redraw per event" lesson this
+/// session already re-learned twice (Message Monitor row-details, TX processing lag).
+/// </summary>
+public sealed partial class SignalPlotViewModel : ObservableObject
+{
+    public const int MaxSelectedSignals = 4;
+
+    /// <summary>Samples older than this relative to the newest one are dropped so a long-running
+    /// plot doesn't grow its buffers (and redraw cost) without bound.</summary>
+    private static readonly TimeSpan RetentionWindow = TimeSpan.FromMinutes(2);
+
+    private readonly Dictionary<(uint CanId, string SignalName), PlotSeries> _seriesByKey = [];
+    private IMessageDatabase? _database;
+    private SignalDecoder? _decoder;
+    private DateTime? _plotStartUtc;
+
+    public ObservableCollection<PlotSignalOption> AvailableSignals { get; } = [];
+
+    /// <summary>Gates both new-sample capture (<see cref="Apply"/>) and the view's redraw loop.
+    /// Defaults to false: the plot stays idle until the user explicitly presses Start, rather than
+    /// silently capturing before they've picked signals / positioned the view. Stopping freezes the
+    /// chart in place — no more incoming samples, no more periodic Clear+Autoscale — so the user can
+    /// zoom/pan with the mouse without it snapping back on the next redraw tick; starting again
+    /// resumes appending where it left off (use <see cref="ClearCommand"/> for a full reset instead).</summary>
+    [ObservableProperty]
+    private bool _isRunning;
+
+    public void SetDatabase(IMessageDatabase? database)
+    {
+        foreach (var option in AvailableSignals)
+        {
+            option.PropertyChanged -= OnSignalOptionPropertyChanged;
+        }
+
+        _database = database;
+        _decoder = database is not null ? new SignalDecoder(database) : null;
+
+        AvailableSignals.Clear();
+        _seriesByKey.Clear();
+        _plotStartUtc = null;
+
+        if (database is null)
+        {
+            return;
+        }
+
+        foreach (var message in database.Messages)
+        {
+            foreach (var signal in message.Signals)
+            {
+                var option = new PlotSignalOption(message.CanId, message.Name, signal.Name, signal.Unit);
+                option.PropertyChanged += OnSignalOptionPropertyChanged;
+                AvailableSignals.Add(option);
+            }
+        }
+    }
+
+    public void ProcessFrames(IReadOnlyList<CanFrame> frames)
+    {
+        foreach (var frame in frames)
+        {
+            Apply(frame);
+        }
+    }
+
+    public void ProcessTransmittedFrame(in CanFrame frame) => Apply(frame);
+
+    private void Apply(in CanFrame frame)
+    {
+        if (!IsRunning || _seriesByKey.Count == 0 || _decoder is null || _database is null || !_database.TryGetMessage(frame.Id, out _))
+        {
+            return;
+        }
+
+        DateTime? sampleAtUtc = null;
+        foreach (var signal in _decoder.Decode(frame))
+        {
+            var key = (frame.Id, signal.SignalName);
+            if (!_seriesByKey.TryGetValue(key, out var series))
+            {
+                continue; // not selected for plotting
+            }
+
+            _plotStartUtc ??= signal.SystemTime;
+            sampleAtUtc ??= signal.SystemTime;
+            var seconds = (sampleAtUtc.Value - _plotStartUtc.Value).TotalSeconds;
+            series.Add(seconds, signal.PhysicalValue);
+        }
+
+        if (sampleAtUtc is not null)
+        {
+            PruneOldSamples(sampleAtUtc.Value);
+        }
+    }
+
+    private void PruneOldSamples(DateTime latestSampleUtc)
+    {
+        var cutoffSeconds = (latestSampleUtc - _plotStartUtc!.Value).TotalSeconds - RetentionWindow.TotalSeconds;
+        if (cutoffSeconds <= 0)
+        {
+            return;
+        }
+
+        foreach (var series in _seriesByKey.Values)
+        {
+            series.PruneBefore(cutoffSeconds);
+        }
+    }
+
+    /// <summary>Snapshot of every currently-selected signal's buffer, for the view to redraw from.
+    /// Returns fresh arrays (not live references) so the view can read them off its own timer
+    /// without racing frame processing.</summary>
+    public IReadOnlyList<PlotSeriesSnapshot> GetSelectedSeriesSnapshot()
+    {
+        var snapshots = new List<PlotSeriesSnapshot>(_seriesByKey.Count);
+        foreach (var option in AvailableSignals)
+        {
+            if (!option.IsSelected)
+            {
+                continue;
+            }
+
+            if (_seriesByKey.TryGetValue((option.CanId, option.SignalName), out var series))
+            {
+                snapshots.Add(new PlotSeriesSnapshot(option.Label, series.ToArrays()));
+            }
+        }
+
+        return snapshots;
+    }
+
+    [RelayCommand]
+    private void Clear()
+    {
+        foreach (var series in _seriesByKey.Values)
+        {
+            series.Clear();
+        }
+
+        _plotStartUtc = null;
+    }
+
+    [RelayCommand]
+    private void Start() => IsRunning = true;
+
+    [RelayCommand]
+    private void Stop() => IsRunning = false;
+
+    /// <summary>Enforces <see cref="MaxSelectedSignals"/> and keeps <see cref="_seriesByKey"/> in
+    /// sync with the picker. Reverting a rejected selection (setting IsSelected back to false)
+    /// re-enters this handler once more, harmlessly hitting the "unselect" branch below.</summary>
+    private void OnSignalOptionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PlotSignalOption.IsSelected) || sender is not PlotSignalOption option)
+        {
+            return;
+        }
+
+        if (option.IsSelected)
+        {
+            if (AvailableSignals.Count(o => o.IsSelected) > MaxSelectedSignals)
+            {
+                option.IsSelected = false;
+                return;
+            }
+
+            _seriesByKey[(option.CanId, option.SignalName)] = new PlotSeries();
+        }
+        else
+        {
+            _seriesByKey.Remove((option.CanId, option.SignalName));
+        }
+    }
+
+    private sealed class PlotSeries
+    {
+        private readonly List<double> _times = [];
+        private readonly List<double> _values = [];
+
+        public void Add(double seconds, double value)
+        {
+            _times.Add(seconds);
+            _values.Add(value);
+        }
+
+        public void PruneBefore(double cutoffSeconds)
+        {
+            var firstKeptIndex = _times.FindIndex(t => t >= cutoffSeconds);
+            if (firstKeptIndex <= 0)
+            {
+                return;
+            }
+
+            _times.RemoveRange(0, firstKeptIndex);
+            _values.RemoveRange(0, firstKeptIndex);
+        }
+
+        public void Clear()
+        {
+            _times.Clear();
+            _values.Clear();
+        }
+
+        public (double[] Times, double[] Values) ToArrays() => (_times.ToArray(), _values.ToArray());
+    }
+}
+
+/// <summary>One selectable signal in the picker list. <see cref="SignalPlotViewModel"/> enforces
+/// the max-selection limit by watching <see cref="IsSelected"/>'s PropertyChanged and reverting it
+/// when rejected.</summary>
+public sealed partial class PlotSignalOption(uint canId, string messageName, string signalName, string? unit) : ObservableObject
+{
+    public uint CanId { get; } = canId;
+    public string MessageName { get; } = messageName;
+    public string SignalName { get; } = signalName;
+    public string Label { get; } = string.IsNullOrEmpty(unit) ? $"{messageName}.{signalName}" : $"{messageName}.{signalName} ({unit})";
+
+    [ObservableProperty]
+    private bool _isSelected;
+}
+
+public sealed record PlotSeriesSnapshot(string Label, (double[] Times, double[] Values) Data);

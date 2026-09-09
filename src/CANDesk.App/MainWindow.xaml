@@ -77,7 +77,9 @@
           <TabItem Header="Transmit">
             <views:TransmitPanelView DataContext="{Binding TransmitPanel}" />
           </TabItem>
-          <TabItem Header="Signal Plot" />
+          <TabItem Header="Signal Plot">
+            <views:SignalPlotView DataContext="{Binding SignalPlot}" />
+          </TabItem>
           <TabItem Header="Diagnostics" />
         </TabControl>
       </Border>
