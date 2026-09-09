@@ -69,8 +69,10 @@
                 <TextBlock Text="PAYLOAD (HEX)" Style="{StaticResource CaptionTextStyle}" />
                 <TextBox Text="{Binding Payload}" FontFamily="{DynamicResource MonoFontFamily}" Margin="0,3,0,0" />
                 <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
-                  <CheckBox Content="Auto Counter" IsChecked="{Binding AutoCounter}" />
-                  <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Margin="14,0,0,0" />
+                  <CheckBox Content="Auto Counter" IsChecked="{Binding AutoCounter}"
+                            ToolTip="AUTOSAR E2E Profile 1: 4-bit rolling counter (0-15) in the low nibble of the last payload byte. Applies once you Start the cyclic job; toggling while running takes effect on the next Start." />
+                  <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Margin="14,0,0,0"
+                            ToolTip="AUTOSAR E2E Profile 1: CRC-8/AUTOSAR (poly 0x2F) written to byte 0, covering every other byte (including the rolling counter, if also enabled). Requires at least 2 payload bytes." />
                 </StackPanel>
               </StackPanel>
             </Border>

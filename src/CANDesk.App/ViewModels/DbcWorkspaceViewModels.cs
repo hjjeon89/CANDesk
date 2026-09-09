@@ -588,7 +588,8 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
             var periodText = job.Period.Replace("ms", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
             if (!double.TryParse(periodText, out var milliseconds) || milliseconds <= 0)
                 throw new InvalidOperationException("A cyclic TX job requires a positive period in milliseconds.");
-            _cyclicJobIds.Add(job, _scheduler.ScheduleCyclic(CreateFrame(job), TimeSpan.FromMilliseconds(milliseconds)));
+            var modifier = E2EProfile1.CreateModifier(job.AutoCounter, job.E2eCrc);
+            _cyclicJobIds.Add(job, _scheduler.ScheduleCyclic(CreateFrame(job), TimeSpan.FromMilliseconds(milliseconds), modifier));
             job.IsEnabled = true;
             LastSendError = string.Empty;
         }
