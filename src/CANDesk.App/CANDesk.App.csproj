@@ -1,5 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting></PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>icon\main_window_icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Glob (not one entry per file) so a new icon under icon/ referenced from XAML via a
+         relative pack URI (e.g. Icon="icon/foo.ico") is automatically embedded as a resource —
+         missing this is exactly what threw a XamlParseException from the Icon property's
+         ImageSourceConverter for db_edit_window_icon.ico/signal_monitor_window_icon.ico, which
+         were referenced from XAML but never added here. -->
+    <Resource Include="icon\*.ico" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CANDesk.Hal\CANDesk.Hal.csproj" />
     <ProjectReference Include="..\CANDesk.Core\CANDesk.Core.csproj" />

@@ -1,7 +1,8 @@
 <Window x:Class="CANDesk.App.MessageDbEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Message DB Editor" Width="920" Height="600" MinWidth="720" MinHeight="460">
+        Title="Message DB Editor" Width="920" Height="600" MinWidth="720" MinHeight="460"
+        Icon="icon/db_edit_window_icon.ico">
   <Grid Margin="12">
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
