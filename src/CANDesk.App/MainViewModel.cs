@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Windows;
@@ -24,6 +25,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private long _rxFrameCount;
     private long _txFrameCount;
     private long _busBitsAccumulated;
+    // Some vendor drivers/hardware modes echo a transmitted frame back through the same RX path
+    // used for genuine bus traffic (PCAN "receive own messages" style behavior; on Vector this can
+    // slip through if the driver delivers the TX echo as a plain RECEIVE_MSG event rather than a
+    // distinctly-tagged one). Content-matching a frame against what TxScheduler.FrameSent just
+    // reported — rather than trusting a vendor-specific "this is an echo" flag — catches the echo
+    // regardless of which vendor/mode produced it, so it isn't double-counted as RX and doesn't
+    // flip a just-sent message's Direction back to "RX" in Monitor/Trace/Signal Monitor.
+    private readonly ConcurrentDictionary<CanFrame, DateTime> _recentlyTransmitted = new();
+    private static readonly TimeSpan EchoSuppressionWindow = TimeSpan.FromMilliseconds(250);
     public event EventHandler? MessageEditorRequested;
     public event EventHandler? SignalMonitorRequested;
     public MessageMonitorViewModel Monitor { get; } = new();
@@ -106,6 +116,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         // are no longer invisible to Trace/Monitor, and TX rate counting doesn't miss them either.
         txScheduler.FrameSent += (_, frame) =>
         {
+            _recentlyTransmitted[frame] = DateTime.UtcNow;
             Interlocked.Increment(ref _txFrameCount);
             Interlocked.Add(ref _busBitsAccumulated, EstimateFrameBits(frame));
             DispatchToUi(() =>
@@ -268,19 +279,41 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
     private void OnFramesBatched(object? sender, IReadOnlyList<CanFrame> frames)
     {
+        List<CanFrame>? genuineRx = null;
+        for (var i = 0; i < frames.Count; i++)
+        {
+            var frame = frames[i];
+            if (_recentlyTransmitted.TryGetValue(frame, out var sentAt) && DateTime.UtcNow - sentAt <= EchoSuppressionWindow)
+            {
+                // Our own transmit, echoed back through the RX path — already accounted for via
+                // FrameSent above; skip it so it isn't double-counted or shown as an RX direction.
+                _recentlyTransmitted.TryRemove(frame, out _);
+                genuineRx ??= [.. frames.Take(i)];
+                continue;
+            }
+
+            genuineRx?.Add(frame);
+        }
+
+        var rxFrames = genuineRx ?? frames;
+        if (rxFrames.Count == 0)
+        {
+            return;
+        }
+
         // Counted here (off the UI thread, as frames actually arrive) rather than in IsCapturing-gated
         // UI processing below, so RxRate/BusLoad reflect real bus traffic even while capture is paused.
-        Interlocked.Add(ref _rxFrameCount, frames.Count);
+        Interlocked.Add(ref _rxFrameCount, rxFrames.Count);
         long bits = 0;
-        foreach (var frame in frames) bits += EstimateFrameBits(frame);
+        foreach (var frame in rxFrames) bits += EstimateFrameBits(frame);
         Interlocked.Add(ref _busBitsAccumulated, bits);
 
         DispatchToUi(() =>
         {
             if (!IsCapturing) return;
-            Monitor.ProcessFrames(frames);
-            TraceLog.ProcessFrames(frames);
-            SignalMonitor.ProcessFrames(frames);
+            Monitor.ProcessFrames(rxFrames);
+            TraceLog.ProcessFrames(rxFrames);
+            SignalMonitor.ProcessFrames(rxFrames);
             OnPropertyChanged(nameof(DroppedFrameCount));
             OnPropertyChanged(nameof(DroppedFrameBrush));
         });
@@ -294,6 +327,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var bits = Interlocked.Exchange(ref _busBitsAccumulated, 0);
         var bitrateKbps = Connection.SelectedNominalTiming.BitrateKbps;
         BusLoadPercent = bitrateKbps > 0 ? Math.Min(100.0, bits / (bitrateKbps * 1000.0) * 100.0) : 0.0;
+
+        // A cyclic TX job with an auto-incrementing counter/CRC byte produces a distinct CanFrame
+        // value on every tick, so unmatched entries (no echo arrived, or the vendor doesn't echo at
+        // all) would otherwise accumulate here forever over a long capture session.
+        var cutoff = DateTime.UtcNow - EchoSuppressionWindow;
+        foreach (var (frame, sentAt) in _recentlyTransmitted)
+        {
+            if (sentAt < cutoff)
+            {
+                _recentlyTransmitted.TryRemove(frame, out _);
+            }
+        }
     }
 
     /// <summary>Rough on-wire bit-length estimate for bus-load purposes: fixed frame overhead
