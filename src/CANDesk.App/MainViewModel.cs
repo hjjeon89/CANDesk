@@ -108,7 +108,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         device.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"{args.Kind}: {args.Message}");
         if (_txScheduler is not null)
         {
-            await _txScheduler.DisposeAsync().ConfigureAwait(false);
+            // No ConfigureAwait(false) here: this method later sets Status (line ~133), which must
+            // run on the UI thread since it fires OnPropertyChanged/command CanExecuteChanged for
+            // WPF-bound state. ConfigureAwait(false) drops the captured UI SynchronizationContext
+            // for the rest of the method, not just this one await — every subsequent await (and any
+            // synchronous code after it, including that Status assignment) would then run on
+            // whatever thread pool thread completed this Task, which is exactly what caused
+            // "ConnectCommand.NotifyCanExecuteChanged() throws" further downstream.
+            await _txScheduler.DisposeAsync();
         }
         var txScheduler = new TxScheduler(device);
         _txScheduler = txScheduler;
@@ -228,7 +235,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         TransmitPanel.SetSendHandler(null);
         TransmitPanel.SetScheduler(null);
-        await _dispatcher.DisposeAsync().ConfigureAwait(false);
+        // No ConfigureAwait(false): the Status assignment below needs the UI thread (see the same
+        // note in AttachCurrentDeviceAsync). This is the exact ConfigureAwait(false) that caused
+        // Status to be set from a background thread on Disconnect, which is what made
+        // ConnectCommand.NotifyCanExecuteChanged() throw inside OnStatusChanged — WPF command
+        // notification/property-changed plumbing is thread-affine to the UI dispatcher.
+        await _dispatcher.DisposeAsync();
         _dispatcher = CreateDispatcher();
         await _connection.DisconnectAsync();
         Status = CanDeviceStatus.Closed.ToString();

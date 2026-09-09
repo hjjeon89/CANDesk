@@ -21,8 +21,10 @@ public sealed partial class SignalPlotViewModel : ObservableObject
     public const int MaxSelectedSignals = 4;
 
     /// <summary>Samples older than this relative to the newest one are dropped so a long-running
-    /// plot doesn't grow its buffers (and redraw cost) without bound.</summary>
-    private static readonly TimeSpan RetentionWindow = TimeSpan.FromMinutes(2);
+    /// plot doesn't grow its buffers (and redraw cost) without bound — the X axis keeps flowing
+    /// (see SignalPlotView.Redraw's AutoScaleX), so anything older than this just scrolls off the
+    /// left edge rather than staying visible.</summary>
+    private static readonly TimeSpan RetentionWindow = TimeSpan.FromSeconds(60);
 
     private readonly Dictionary<(uint CanId, string SignalName), PlotSeries> _seriesByKey = [];
     private IMessageDatabase? _database;
