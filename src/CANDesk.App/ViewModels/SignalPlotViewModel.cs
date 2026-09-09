@@ -34,8 +34,9 @@ public sealed partial class SignalPlotViewModel : ObservableObject
     /// Defaults to false: the plot stays idle until the user explicitly presses Start, rather than
     /// silently capturing before they've picked signals / positioned the view. Stopping freezes the
     /// chart in place — no more incoming samples, no more periodic Clear+Autoscale — so the user can
-    /// zoom/pan with the mouse without it snapping back on the next redraw tick; starting again
-    /// resumes appending where it left off (use <see cref="ClearCommand"/> for a full reset instead).</summary>
+    /// zoom/pan with the mouse without it snapping back on the next redraw tick. Starting again
+    /// clears the previous buffers first (see <see cref="Start"/>) and begins a fresh plot, matching
+    /// <see cref="TraceLogViewModel"/>'s Stop-ends-the-session / Start-begins-fresh convention.</summary>
     [ObservableProperty]
     private bool _isRunning;
 
@@ -143,6 +144,13 @@ public sealed partial class SignalPlotViewModel : ObservableObject
         return snapshots;
     }
 
+    /// <summary>Raised whenever <see cref="Clear"/> runs. The view listens for this to force an
+    /// immediate redraw even while <see cref="IsRunning"/> is false — the redraw timer otherwise
+    /// skips touching the chart while stopped (that's what keeps manual zoom/pan from resetting),
+    /// which meant Clear looked like it did nothing when pressed while stopped: the buffers were
+    /// wiped but the on-screen chart never got told to catch up.</summary>
+    public event EventHandler? Cleared;
+
     [RelayCommand]
     private void Clear()
     {
@@ -152,10 +160,17 @@ public sealed partial class SignalPlotViewModel : ObservableObject
         }
 
         _plotStartUtc = null;
+        Cleared?.Invoke(this, EventArgs.Empty);
     }
 
+    // Mirrors TraceLogViewModel's Start/Stop semantics: Stop ends the session, so restarting
+    // begins a fresh plot (X axis back to 0) rather than resuming mid-buffer.
     [RelayCommand]
-    private void Start() => IsRunning = true;
+    private void Start()
+    {
+        Clear();
+        IsRunning = true;
+    }
 
     [RelayCommand]
     private void Stop() => IsRunning = false;

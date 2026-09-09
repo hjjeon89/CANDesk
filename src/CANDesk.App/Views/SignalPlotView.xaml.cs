@@ -25,18 +25,47 @@ public partial class SignalPlotView : UserControl
         // correctly. Render sits above Background (and below Normal), so it isn't starved by RX
         // processing but still stays out of the way of higher-priority UI work.
         _redrawTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(100) };
-        _redrawTimer.Tick += (_, _) => Redraw();
+        _redrawTimer.Tick += (_, _) => RedrawIfRunning();
         _redrawTimer.Start();
         Unloaded += (_, _) => _redrawTimer.Stop();
+        DataContextChanged += OnDataContextChanged;
     }
 
-    private void Redraw()
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is SignalPlotViewModel oldViewModel)
+        {
+            oldViewModel.Cleared -= OnCleared;
+        }
+
+        if (e.NewValue is SignalPlotViewModel newViewModel)
+        {
+            newViewModel.Cleared += OnCleared;
+        }
+    }
+
+    // Clear must repaint immediately even while stopped — otherwise the buffers are wiped but the
+    // on-screen chart (frozen on purpose so manual zoom/pan survives) never gets told to catch up,
+    // which looks exactly like the Clear button doing nothing.
+    private void OnCleared(object? sender, EventArgs e) => Redraw();
+
+    private void RedrawIfRunning()
     {
         if (DataContext is not SignalPlotViewModel viewModel || !viewModel.IsRunning)
         {
             // Stopped: skip Clear+AutoScale entirely so the user's manual zoom/pan (ScottPlot's
             // built-in mouse interaction) is left completely undisturbed. Resuming Start picks the
             // redraw back up on the next tick.
+            return;
+        }
+
+        Redraw();
+    }
+
+    private void Redraw()
+    {
+        if (DataContext is not SignalPlotViewModel viewModel)
+        {
             return;
         }
 

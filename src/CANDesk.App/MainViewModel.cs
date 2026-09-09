@@ -213,8 +213,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        var lines = new List<string> { "Index,Timestamp,CanId,Direction,Dlc,Payload" };
-        lines.AddRange(TraceLog.Frames.Select(frame => string.Join(',', frame.Index, frame.Time.ToString("O"), frame.Id, frame.Direction, frame.Dlc, $"\"{frame.Data}\"")));
+        var lines = new List<string> { "Index,Timestamp,CanId,Direction,Dlc,Payload,DecodedSummary" };
+        lines.AddRange(TraceLog.Frames.Select(frame => string.Join(',', frame.Index, frame.Time.ToString("O"), frame.Id, frame.Direction, frame.Dlc, $"\"{frame.Data}\"", $"\"{frame.Summary.Replace("\"", "\"\"", StringComparison.Ordinal)}\"")));
         await File.WriteAllLinesAsync(dialog.FileName, lines);
     }
 
