@@ -143,6 +143,12 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
             job.Modifier?.Invoke(frame.PayloadSpanWritable, count);
         }
 
+        // job.Frame is the same stored template mutated in place on every cyclic/triggered tick, so
+        // its SystemTime stays frozen at whenever the job was scheduled (or last had UpdatePayload
+        // called) unless re-stamped here. Without this, Monitor's CycleTimeMs — computed from
+        // consecutive frames' SystemTime — saw the same stale value every tick, showing 0 or even
+        // negative gaps once interleaved with a frame that had a real, later timestamp.
+        frame = frame.WithSystemTime(DateTime.UtcNow);
         await device.SendAsync(frame, ct).ConfigureAwait(false);
         FrameSent?.Invoke(this, frame);
     }

@@ -45,7 +45,14 @@ public unsafe struct CanFrame : IEquatable<CanFrame>
         return frame;
     }
 
-    public CanFrame WithPayload(ReadOnlySpan<byte> payload) => Create(Id, payload, Flags, TimestampUs, SystemTime);
+    public readonly CanFrame WithPayload(ReadOnlySpan<byte> payload) => Create(Id, payload, Flags, TimestampUs, SystemTime);
+
+    /// <summary>Returns a copy with <see cref="SystemTime"/> replaced, payload/id/flags unchanged.
+    /// Cyclic/triggered <c>TxScheduler</c> jobs mutate the same stored template frame's payload
+    /// bytes in place on every send rather than constructing a new <see cref="CanFrame"/>, so
+    /// without this its <see cref="SystemTime"/> would stay frozen at whenever the job was
+    /// scheduled (or last had its payload replaced) instead of reflecting the actual send time.</summary>
+    public readonly CanFrame WithSystemTime(DateTime systemTime) => Create(Id, PayloadSpan, Flags, TimestampUs, systemTime);
 
     public readonly bool Equals(CanFrame other) => Id == other.Id && Flags == other.Flags && Dlc == other.Dlc &&
         PayloadLength == other.PayloadLength && PayloadSpan.SequenceEqual(other.PayloadSpan);

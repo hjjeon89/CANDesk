@@ -44,6 +44,42 @@ public sealed class TxSchedulerTests
     }
 
     [Fact]
+    public async Task ScheduleCyclic_StampsEachSentFrameWithTheActualSendTime()
+    {
+        // Regression test: SendJobAsync used to re-send the same stored template CanFrame on every
+        // tick without touching its SystemTime, so consecutive FrameSent events all reported the
+        // stale timestamp from whenever the job was scheduled. Monitor's CycleTimeMs, computed from
+        // consecutive frames' SystemTime, then read as 0 (or negative once interleaved with a frame
+        // that had a real, later timestamp) instead of the actual ~cyclic-period gap.
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sentTimes = new List<DateTime>();
+        var sawThreeSends = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.FrameSent += (_, frame) =>
+        {
+            lock (sentTimes)
+            {
+                sentTimes.Add(frame.SystemTime);
+                if (sentTimes.Count >= 3)
+                {
+                    sawThreeSends.TrySetResult();
+                }
+            }
+        };
+
+        var jobId = scheduler.ScheduleCyclic(CanFrame.Create(0x300, [0x00]), TimeSpan.FromMilliseconds(20));
+
+        await sawThreeSends.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        scheduler.Cancel(jobId);
+
+        lock (sentTimes)
+        {
+            Assert.True(sentTimes[1] > sentTimes[0], "Second send's SystemTime should be later than the first's.");
+            Assert.True(sentTimes[2] > sentTimes[1], "Third send's SystemTime should be later than the second's.");
+        }
+    }
+
+    [Fact]
     public async Task SendOnceAsync_RaisesFrameSent_ForRateAndTraceObservers()
     {
         var device = new RecordingCanDevice();
