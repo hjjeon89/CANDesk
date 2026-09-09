@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using CANDesk.Core.MessageDb;
 using CANDesk.Core.Scheduling;
@@ -404,6 +405,63 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
 
     [ObservableProperty]
     private string? _selectedEmulatedNode;
+
+    public TransmitPanelViewModel()
+    {
+        foreach (var job in Jobs)
+        {
+            job.PropertyChanged += OnJobPropertyChanged;
+        }
+
+        Jobs.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems is not null)
+            {
+                foreach (TxJobRow job in e.OldItems) job.PropertyChanged -= OnJobPropertyChanged;
+            }
+
+            if (e.NewItems is not null)
+            {
+                foreach (TxJobRow job in e.NewItems) job.PropertyChanged += OnJobPropertyChanged;
+            }
+        };
+    }
+
+    /// <summary>Pushes a Raw-Hex or signal-value edit into the running cyclic job so it actually
+    /// changes what's on the bus, instead of only updating the grid. <see cref="TxJobRow.Payload"/>
+    /// is the single point both edit paths (typing hex directly, or <see cref="TxSignalEditRow"/>
+    /// re-encoding a physical value) funnel through, so one subscription covers both.</summary>
+    private void OnJobPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TxJobRow.Payload) || sender is not TxJobRow job)
+        {
+            return;
+        }
+
+        if (!_cyclicJobIds.TryGetValue(job, out var jobId))
+        {
+            return;
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromHexString(job.Payload.Replace(" ", string.Empty, StringComparison.Ordinal));
+        }
+        catch (FormatException)
+        {
+            return; // mid-edit invalid hex (odd digit count, stray character); next valid edit pushes through
+        }
+
+        try
+        {
+            _scheduler?.UpdatePayload(jobId, bytes);
+        }
+        catch (KeyNotFoundException)
+        {
+            // The job was cancelled concurrently (e.g. Stop clicked right as this fired); nothing to update.
+        }
+    }
 
     [RelayCommand]
     private void AddJob() => Jobs.Add(new("0x000", "New TX Job", "Manual", "8", "00 00 00 00 00 00 00 00", false, false, false));

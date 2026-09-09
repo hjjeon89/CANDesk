@@ -80,6 +80,44 @@ public sealed class TxSchedulerTests
     }
 
     [Fact]
+    public async Task UpdatePayload_ChangesSubsequentCyclicSends()
+    {
+        // Regression coverage for the gap ITxScheduler.UpdatePayload exists to close: editing a
+        // running cyclic job's Raw Hex or a signal's physical value in the UI must actually reach
+        // the wire, not just the grid. This tests the scheduler side of that path (App-layer wiring
+        // from TxJobRow.PropertyChanged to this call isn't covered here, per the App layer's
+        // existing "no automated tests" convention).
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sentPayloads = new List<byte[]>();
+        var sawUpdatedPayload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.FrameSent += (_, frame) =>
+        {
+            lock (sentPayloads)
+            {
+                var payload = frame.PayloadSpan.ToArray();
+                sentPayloads.Add(payload);
+                if (payload is [0xAA, 0xBB])
+                {
+                    sawUpdatedPayload.TrySetResult();
+                }
+            }
+        };
+
+        var jobId = scheduler.ScheduleCyclic(CanFrame.Create(0x300, [0x00, 0x00]), TimeSpan.FromMilliseconds(5));
+        await Task.Delay(20); // let a couple of ticks go out with the original payload first
+        scheduler.UpdatePayload(jobId, [0xAA, 0xBB]);
+
+        await sawUpdatedPayload.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        scheduler.Cancel(jobId);
+
+        lock (sentPayloads)
+        {
+            Assert.Contains(sentPayloads, p => p is [0x00, 0x00]);
+        }
+    }
+
+    [Fact]
     public async Task SendOnceAsync_RaisesFrameSent_ForRateAndTraceObservers()
     {
         var device = new RecordingCanDevice();
