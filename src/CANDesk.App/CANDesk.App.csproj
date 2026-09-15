@@ -26,6 +26,7 @@
     <ProjectReference Include="..\CANDesk.Core\CANDesk.Core.csproj" />
     <ProjectReference Include="..\CANDesk.Hal.Peak\CANDesk.Hal.Peak.csproj" />
     <ProjectReference Include="..\CANDesk.Hal.Vector\CANDesk.Hal.Vector.csproj" />
+    <ProjectReference Include="..\CANDesk.Hal.Candlelight\CANDesk.Hal.Candlelight.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
   </ItemGroup>
