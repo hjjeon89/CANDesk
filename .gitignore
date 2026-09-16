@@ -58,3 +58,4 @@ nunit-*.xml
 
 **/.vs
 **/sample
+**/build

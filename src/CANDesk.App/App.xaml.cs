@@ -18,6 +18,8 @@ public partial class App : Application
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Peak.PeakCanDeviceFactory>();
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Vector.VectorCanDeviceFactory>();
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Candlelight.CandlelightCanDeviceFactory>();
+            services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Kvaser.KvaserCanDeviceFactory>();
+            services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.ValueCan.ValueCanDeviceFactory>();
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Mock.MockCanDeviceFactory>();
             services.AddSingleton<DeviceConnectionService>();
             services.AddSingleton<DeviceConnectionViewModel>();

@@ -12,7 +12,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     private readonly IBitrateTableProvider _bitrateTable;
     private readonly IBitTimingCalculator _timingCalculator;
     private const int DefaultControllerClockHz = 80_000_000;
-    public IReadOnlyList<string> Vendors { get; } = ["PEAK", "Kvaser", "Vector", "CANable", "Mock"];
+    public IReadOnlyList<string> Vendors { get; } = ["PEAK", "Kvaser", "Vector", "CANable", "ValueCAN", "Mock"];
     public IReadOnlyList<string> Channels { get; } = ["Channel 1", "Channel 2"];
     public IReadOnlyList<BitTimingSetting> NominalPresets { get; }
     public IReadOnlyList<BitTimingSetting> DataPresets { get; }

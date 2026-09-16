@@ -8,3 +8,7 @@ Native vendor redistributables that CANDesk P/Invokes into but doesn't ship in t
   whenever it's present, so no other setup is needed. Without it, `CANDesk.Hal.Vector`'s
   `VectorCanDeviceFactory.EnumerateAsync` just reports no Vector channels (Vector stays
   disabled in the UI) instead of the app failing to start.
+
+- `icsneo40.dll`, `icsneo40-64.dll`, or `icsneolegacy.dll` - Intrepid neoVI / ValueCAN SDK
+  runtime. Drop the matching DLL here once the SDK/header version is selected. The current
+  ValueCAN adapter reports discovery diagnostics only until the native API binding is verified.

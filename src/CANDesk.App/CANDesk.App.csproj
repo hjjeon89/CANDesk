@@ -27,6 +27,8 @@
     <ProjectReference Include="..\CANDesk.Hal.Peak\CANDesk.Hal.Peak.csproj" />
     <ProjectReference Include="..\CANDesk.Hal.Vector\CANDesk.Hal.Vector.csproj" />
     <ProjectReference Include="..\CANDesk.Hal.Candlelight\CANDesk.Hal.Candlelight.csproj" />
+    <ProjectReference Include="..\CANDesk.Hal.Kvaser\CANDesk.Hal.Kvaser.csproj" />
+    <ProjectReference Include="..\CANDesk.Hal.ValueCan\CANDesk.Hal.ValueCan.csproj" />
     <ProjectReference Include="..\CANDesk.Hal.Mock\CANDesk.Hal.Mock.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
@@ -36,5 +38,6 @@
          CANDesk.App.exe whenever present so VectorCanDeviceFactory's P/Invoke can find it; absent,
          it just means Vector stays unavailable in the UI (see vendor/README.md). -->
     <None Include="vendor\vxlapi64.dll" Condition="Exists('vendor\vxlapi64.dll')" CopyToOutputDirectory="PreserveNewest" Link="vxlapi64.dll" />
+    <None Include="vendor\icsneo*.dll" Condition="Exists('vendor\icsneo40.dll') Or Exists('vendor\icsneo40-64.dll') Or Exists('vendor\icsneolegacy.dll')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
