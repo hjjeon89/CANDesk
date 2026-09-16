@@ -21,6 +21,7 @@ namespace CANDesk.App;
 public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly DeviceConnectionService _connection;
+    private readonly ThemeService _themeService;
     private readonly DispatcherTimer _rateTimer;
     private RxDispatcher _dispatcher;
     private ITxScheduler? _txScheduler;
@@ -86,9 +87,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public long DroppedFrameCount => _dispatcher.DroppedFrameCount + (_connection.CurrentDevice?.DroppedFrameCount ?? 0);
     public Brush DroppedFrameBrush => DroppedFrameCount > 0 ? Brushes.Firebrick : Brushes.SlateGray;
 
-    public MainViewModel(DeviceConnectionService connection, DeviceConnectionViewModel connectionViewModel)
+    public MainViewModel(DeviceConnectionService connection, DeviceConnectionViewModel connectionViewModel, ThemeService themeService)
     {
         _connection = connection;
+        _themeService = themeService;
         Connection = connectionViewModel;
         _dispatcher = CreateDispatcher();
         DbcSignalTree.SendToTransmitRequested += message =>
@@ -103,6 +105,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _rateTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _rateTimer.Tick += (_, _) => UpdateRates();
         _rateTimer.Start();
+    }
+
+    public bool IsLightTheme => _themeService.CurrentTheme == AppTheme.Light;
+    public bool IsDarkTheme => _themeService.CurrentTheme == AppTheme.Dark;
+
+    [RelayCommand]
+    private void UseLightTheme() => ApplyTheme(AppTheme.Light);
+
+    [RelayCommand]
+    private void UseDarkTheme() => ApplyTheme(AppTheme.Dark);
+
+    private void ApplyTheme(AppTheme theme)
+    {
+        _themeService.ApplyTheme(theme);
+        OnPropertyChanged(nameof(IsLightTheme));
+        OnPropertyChanged(nameof(IsDarkTheme));
     }
     public async Task AttachCurrentDeviceAsync(CancellationToken cancellationToken = default)
     {

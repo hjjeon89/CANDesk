@@ -21,10 +21,12 @@ public partial class App : Application
             services.AddSingleton<CANDesk.Hal.ICanDeviceFactory, CANDesk.Hal.Mock.MockCanDeviceFactory>();
             services.AddSingleton<DeviceConnectionService>();
             services.AddSingleton<DeviceConnectionViewModel>();
+            services.AddSingleton<ThemeService>();
             services.AddSingleton<MainViewModel>();
             services.AddSingleton<MainWindow>();
         }).Build();
         await _host.StartAsync();
+        _host.Services.GetRequiredService<ThemeService>().ApplySavedTheme();
         _connection = _host.Services.GetRequiredService<DeviceConnectionService>();
         // No auto-connect at startup: the app opens disconnected and the user picks a real vendor
         // and channel, then hits Connect (MainViewModel.Connect already calls AttachCurrentDeviceAsync

@@ -16,6 +16,8 @@ public sealed record MockTraceFrame(CanFrame Frame, TimeSpan Delay);
 
 public sealed class MockCanDevice : ICanDevice
 {
+    private const int StressTickHz = 100;
+
     private readonly Channel<CanFrame> _frames;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _traceGate = new();
@@ -36,6 +38,7 @@ public sealed class MockCanDevice : ICanDevice
 
     public string ChannelName { get; }
     public MockCanMode Mode { get; set; }
+    public int StressFramesPerSecond { get; set; } = 1_000;
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
     public long DroppedFrameCount => Interlocked.Read(ref _dropped);
 
@@ -139,8 +142,13 @@ public sealed class MockCanDevice : ICanDevice
         {
             while (!cancellationToken.IsCancellationRequested && Status == CanDeviceStatus.Open)
             {
-                _frames.Writer.TryWrite(CanFrame.Create(0x700 + counter % 0x100, BitConverter.GetBytes(counter++)));
-                await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                var frameCount = Math.Max(1, StressFramesPerSecond / StressTickHz);
+                for (var i = 0; i < frameCount; i++)
+                {
+                    _frames.Writer.TryWrite(CanFrame.Create(0x700 + counter % 0x100, BitConverter.GetBytes(counter++)));
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(1d / StressTickHz), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
