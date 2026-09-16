@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Windows.Data;
 using System.Windows.Media;
 using CANDesk.Core.Dispatch;
+using CANDesk.Core.Logging;
 using CANDesk.Core.MessageDb;
 using CANDesk.Hal;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -114,22 +115,44 @@ public sealed partial class TraceLogViewModel : ObservableObject
         TrimToCapacity();
     }
 
+    public void LoadTraceFrames(IEnumerable<CanTraceFrame> frames)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+
+        Frames.Clear();
+        Interlocked.Exchange(ref _sequence, 0);
+        foreach (var traceFrame in frames)
+        {
+            Frames.Add(CreateRow(traceFrame.Frame, traceFrame.Direction, traceFrame.Timestamp));
+        }
+
+        SelectedFrame = Frames.Count > 0 ? Frames[^1] : TraceFrameRow.Empty;
+        CaptureStatus = TraceCaptureStatus.Stopped;
+        TrimToCapacity();
+    }
+
     private void Append(in CanFrame frame, string direction)
     {
         if (CaptureStatus != TraceCaptureStatus.Running) return;
 
+        var row = CreateRow(frame, direction, frame.SystemTime);
+        Frames.Add(row);
+        SelectedFrame = row;
+    }
+
+    private TraceFrameRow CreateRow(in CanFrame frame, string direction, DateTime timestamp)
+    {
         var bytes = Convert.ToHexString(frame.PayloadSpan).Chunk(2).Select(static value => new string(value)).ToArray();
-        var row = new TraceFrameRow(
+        return new TraceFrameRow(
             Interlocked.Increment(ref _sequence),
-            frame.SystemTime,
+            timestamp,
             $"0x{frame.Id:X3}",
             direction,
             frame.Dlc,
             string.Join(" ", bytes),
             Summarize(frame),
-            bytes);
-        Frames.Add(row);
-        SelectedFrame = row;
+            bytes,
+            frame);
     }
 
     private string Summarize(in CanFrame frame)

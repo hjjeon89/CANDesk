@@ -7,6 +7,21 @@ namespace CANDesk.Core.Tests;
 public sealed class TxSchedulerTests
 {
     [Fact]
+    public void TriggeredTxRule_MatchesIdMaskAndPayloadPrefix()
+    {
+        var rule = new TriggeredTxRule(
+            triggerId: 0x7E0,
+            triggerMask: 0x7FF,
+            triggerPayloadPattern: [0x02, 0x10],
+            responseFrame: CanFrame.Create(0x7E8, [0x50]),
+            responseDelay: TimeSpan.FromMilliseconds(10));
+
+        Assert.True(rule.IsSatisfied(CanFrame.Create(0x7E0, [0x02, 0x10, 0x01])));
+        Assert.False(rule.IsSatisfied(CanFrame.Create(0x7E1, [0x02, 0x10, 0x01])));
+        Assert.False(rule.IsSatisfied(CanFrame.Create(0x7E0, [0x02, 0x11, 0x01])));
+    }
+
+    [Fact]
     public async Task TriggeredJob_PublishesSendFailureInsteadOfSilentlyDroppingIt()
     {
         var device = new ThrowingCanDevice();
@@ -20,6 +35,62 @@ public sealed class TxSchedulerTests
         var error = await failure.Task.WaitAsync(TimeSpan.FromSeconds(1));
         Assert.Equal(jobId, error.JobId);
         Assert.IsType<InvalidOperationException>(error.Exception);
+    }
+
+    [Fact]
+    public async Task ScheduleTriggered_AppliesDelayAndRepeatLimit()
+    {
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sentFrames = new List<CanFrame>();
+        var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.FrameSent += (_, frame) =>
+        {
+            lock (sentFrames)
+            {
+                sentFrames.Add(frame);
+                if (sentFrames.Count >= 2)
+                {
+                    sent.TrySetResult();
+                }
+            }
+        };
+
+        var started = DateTime.UtcNow;
+        var rule = new TriggeredTxRule(0x7E0, 0x7FF, [0x22], CanFrame.Create(0x7E8, [0x62]), TimeSpan.FromMilliseconds(30), repeatCount: 2);
+        scheduler.ScheduleTriggered(rule.ResponseFrame, rule, rule.ResponseDelay, rule.RepeatCount);
+
+        scheduler.NotifyReceived(CanFrame.Create(0x7E0, [0x22, 0xF1, 0x90]));
+        scheduler.NotifyReceived(CanFrame.Create(0x7E0, [0x22, 0xF1, 0x91]));
+        scheduler.NotifyReceived(CanFrame.Create(0x7E0, [0x22, 0xF1, 0x92]));
+
+        await sent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(80);
+
+        lock (sentFrames)
+        {
+            Assert.Equal(2, sentFrames.Count);
+            Assert.All(sentFrames, frame => Assert.Equal((uint)0x7E8, frame.Id));
+            Assert.True(sentFrames[0].SystemTime - started >= TimeSpan.FromMilliseconds(20));
+        }
+    }
+
+    [Fact]
+    public async Task Cancel_StopsPendingDelayedTriggeredSend()
+    {
+        var device = new RecordingCanDevice();
+        await using var scheduler = new TxScheduler(device);
+        var sentCount = 0;
+        scheduler.FrameSent += (_, _) => Interlocked.Increment(ref sentCount);
+
+        var rule = new TriggeredTxRule(0x7E0, 0x7FF, [], CanFrame.Create(0x7E8, [0x62]), TimeSpan.FromMilliseconds(100));
+        var jobId = scheduler.ScheduleTriggered(rule.ResponseFrame, rule, rule.ResponseDelay, rule.RepeatCount);
+
+        scheduler.NotifyReceived(CanFrame.Create(0x7E0, [0x01]));
+        scheduler.Cancel(jobId);
+        await Task.Delay(180);
+
+        Assert.Equal(0, Volatile.Read(ref sentCount));
     }
 
     [Fact]

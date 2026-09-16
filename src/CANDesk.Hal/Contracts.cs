@@ -196,6 +196,7 @@ public interface ICanDevice : IAsyncDisposable
 {
     string ChannelName { get; }
     CanDeviceStatus Status { get; }
+    long DroppedFrameCount => 0;
     event EventHandler<CanErrorEventArgs>? ErrorOccurred;
     event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged;
     Task OpenAsync(CanBusConfig config, CancellationToken cancellationToken = default);

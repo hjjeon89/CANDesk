@@ -15,9 +15,10 @@ public interface IRxDispatcher : IAsyncDisposable
     void AddFilter(IFrameFilter filter);
     Task StartAsync(IAsyncEnumerable<CanFrame> source, CancellationToken cancellationToken = default);
 }
-public sealed class RxDispatcher(TimeSpan? batchInterval = null, int capacity = 16_384) : IRxDispatcher
+public sealed class RxDispatcher : IRxDispatcher
 {
-    private readonly Channel<CanFrame> _channel = Channel.CreateBounded<CanFrame>(new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+    private readonly TimeSpan _batchInterval;
+    private readonly Channel<CanFrame> _channel;
     private readonly List<IFrameFilter> _filters = [];
     private CancellationTokenSource? _cts;
     private Task? _pump;
@@ -26,19 +27,28 @@ public sealed class RxDispatcher(TimeSpan? batchInterval = null, int capacity = 
     private int _disposeState;
     public event EventHandler<IReadOnlyList<CanFrame>>? FramesBatched;
     public long DroppedFrameCount => Interlocked.Read(ref _dropped);
+
+    public RxDispatcher(TimeSpan? batchInterval = null, int capacity = 16_384)
+    {
+        _batchInterval = batchInterval ?? TimeSpan.FromMilliseconds(33);
+        _channel = Channel.CreateBounded<CanFrame>(
+            new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true },
+            _ => Interlocked.Increment(ref _dropped));
+    }
+
     public void AddFilter(IFrameFilter filter) => _filters.Add(filter ?? throw new ArgumentNullException(nameof(filter)));
     public Task StartAsync(IAsyncEnumerable<CanFrame> source, CancellationToken cancellationToken = default)
     {
         if (_cts is not null) throw new InvalidOperationException("Dispatcher has already started.");
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _pump = PumpAsync(source, _cts.Token);
-        _batcher = BatchAsync(batchInterval ?? TimeSpan.FromMilliseconds(33), _cts.Token);
+        _batcher = BatchAsync(_batchInterval, _cts.Token);
         return Task.CompletedTask;
     }
     private async Task PumpAsync(IAsyncEnumerable<CanFrame> source, CancellationToken ct)
     {
         try { await foreach (var frame in source.WithCancellation(ct).ConfigureAwait(false))
-            if (_filters.Count == 0 || _filters.Any(filter => filter.Matches(frame))) { if (!_channel.Writer.TryWrite(frame)) Interlocked.Increment(ref _dropped); } }
+            if (_filters.Count == 0 || _filters.Any(filter => filter.Matches(frame))) _channel.Writer.TryWrite(frame); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         finally { _channel.Writer.TryComplete(); }
     }

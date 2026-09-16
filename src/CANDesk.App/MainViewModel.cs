@@ -5,9 +5,11 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CANDesk.Core.Dispatch;
+using CANDesk.Core.Logging;
 using CANDesk.Core.MessageDb;
 using CANDesk.Core.Scheduling;
 using CANDesk.Hal;
+using CANDesk.Hal.Mock;
 using CANDesk.App.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -25,6 +27,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private long _rxFrameCount;
     private long _txFrameCount;
     private long _busBitsAccumulated;
+    private IReadOnlyList<CanTraceFrame> _importedTraceFrames = [];
     // Some vendor drivers/hardware modes echo a transmitted frame back through the same RX path
     // used for genuine bus traffic (PCAN "receive own messages" style behavior; on Vector this can
     // slip through if the driver delivers the TX echo as a plain RECEIVE_MSG event rather than a
@@ -80,7 +83,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Pixel width of the status-bar bus-load indicator fill, scaled against the 60px track
     /// drawn in <c>MainWindow.xaml</c>.</summary>
     public double BusLoadBarWidth => Math.Clamp(BusLoadPercent, 0, 100) / 100.0 * 60.0;
-    public long DroppedFrameCount => _dispatcher.DroppedFrameCount;
+    public long DroppedFrameCount => _dispatcher.DroppedFrameCount + (_connection.CurrentDevice?.DroppedFrameCount ?? 0);
     public Brush DroppedFrameBrush => DroppedFrameCount > 0 ? Brushes.Firebrick : Brushes.SlateGray;
 
     public MainViewModel(DeviceConnectionService connection, DeviceConnectionViewModel connectionViewModel)
@@ -207,12 +210,78 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     [RelayCommand]
+    private async Task ImportTraceAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "Vector ASCII (*.asc)|*.asc",
+            Title = "Import Trace"
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(dialog.FileName);
+            var frames = await new AscTraceReader().ReadAsync(stream);
+            _importedTraceFrames = frames;
+            TraceLog.LoadTraceFrames(frames);
+            SelectedCenterTabIndex = 0;
+            LastDeviceError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            LastDeviceError = $"Trace import failed: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ReplayImportedTraceAsync()
+    {
+        if (_importedTraceFrames.Count == 0)
+        {
+            LastDeviceError = "Import an ASC trace before replay.";
+            return;
+        }
+
+        if (_txScheduler is not null)
+        {
+            await _txScheduler.DisposeAsync();
+            _txScheduler = null;
+        }
+
+        await _dispatcher.DisposeAsync();
+        _dispatcher = CreateDispatcher();
+
+        var playbackFrames = MockTracePlayback.FromTimestampedFrames(
+            _importedTraceFrames.Select(frame => (frame.Frame, frame.Timestamp)));
+        var device = new MockCanDevice("Imported Trace Playback", MockCanMode.TracePlayback);
+        device.SetTracePlayback(playbackFrames);
+
+        try
+        {
+            await _connection.ConnectDeviceAsync(device, Connection.BuildConfiguration());
+            await AttachCurrentDeviceAsync();
+            Status = CanDeviceStatus.Open.ToString();
+            SelectedCenterTabIndex = 0;
+            LastDeviceError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            await device.DisposeAsync();
+            LastDeviceError = $"Trace replay failed: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
     private async Task ExportTraceAsync()
     {
         var dialog = new SaveFileDialog
         {
-            Filter = "CSV file (*.csv)|*.csv",
-            FileName = "candesk-trace.csv",
+            Filter = "Vector ASCII (*.asc)|*.asc|CSV file (*.csv)|*.csv",
+            FileName = "candesk-trace.asc",
             Title = "Export Trace"
         };
         if (dialog.ShowDialog() != true)
@@ -220,9 +289,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        await using var stream = File.Create(dialog.FileName);
+        if (dialog.FilterIndex == 1 || string.Equals(Path.GetExtension(dialog.FileName), ".asc", StringComparison.OrdinalIgnoreCase))
+        {
+            var frames = TraceLog.Frames.Select(frame => new CanTraceFrame(frame.Time, 1, frame.Direction, frame.Frame));
+            await new AscTraceWriter().WriteAsync(frames, stream);
+            return;
+        }
+
         var lines = new List<string> { "Index,Timestamp,CanId,Direction,Dlc,Payload,DecodedSummary" };
         lines.AddRange(TraceLog.Frames.Select(frame => string.Join(',', frame.Index, frame.Time.ToString("O"), frame.Id, frame.Direction, frame.Dlc, $"\"{frame.Data}\"", $"\"{frame.Summary.Replace("\"", "\"\"", StringComparison.Ordinal)}\"")));
-        await File.WriteAllLinesAsync(dialog.FileName, lines);
+        await using var writer = new StreamWriter(stream);
+        foreach (var line in lines)
+        {
+            await writer.WriteLineAsync(line);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
@@ -322,16 +403,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         long bits = 0;
         foreach (var frame in rxFrames) bits += EstimateFrameBits(frame);
         Interlocked.Add(ref _busBitsAccumulated, bits);
+        foreach (var frame in rxFrames)
+        {
+            _txScheduler?.NotifyReceived(frame);
+        }
 
         DispatchToUi(() =>
         {
+            OnPropertyChanged(nameof(DroppedFrameCount));
+            OnPropertyChanged(nameof(DroppedFrameBrush));
             if (!IsCapturing) return;
             Monitor.ProcessFrames(rxFrames);
             TraceLog.ProcessFrames(rxFrames);
             SignalMonitor.ProcessFrames(rxFrames);
             SignalPlot.ProcessFrames(rxFrames);
-            OnPropertyChanged(nameof(DroppedFrameCount));
-            OnPropertyChanged(nameof(DroppedFrameBrush));
         });
     }
 
@@ -343,6 +428,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var bits = Interlocked.Exchange(ref _busBitsAccumulated, 0);
         var bitrateKbps = Connection.SelectedNominalTiming.BitrateKbps;
         BusLoadPercent = bitrateKbps > 0 ? Math.Min(100.0, bits / (bitrateKbps * 1000.0) * 100.0) : 0.0;
+        OnPropertyChanged(nameof(DroppedFrameCount));
+        OnPropertyChanged(nameof(DroppedFrameBrush));
 
         // A cyclic TX job with an auto-incrementing counter/CRC byte produces a distinct CanFrame
         // value on every tick, so unmatched entries (no echo arrived, or the vendor doesn't echo at
@@ -448,8 +535,14 @@ public sealed partial class TxJobRow : ObservableObject
 
     [ObservableProperty] private string _payload;
     [ObservableProperty] private bool _isEnabled;
+    [ObservableProperty] private bool _isTriggered;
     [ObservableProperty] private bool _autoCounter;
     [ObservableProperty] private bool _e2eCrc;
+    [ObservableProperty] private string _triggerId = "0x7E0";
+    [ObservableProperty] private string _triggerMask = "0x7FF";
+    [ObservableProperty] private string _triggerPayloadPattern = "";
+    [ObservableProperty] private string _responseDelayMs = "10";
+    [ObservableProperty] private string _repeatCountText = "";
 
     partial void OnPayloadChanged(string value)
     {
@@ -554,7 +647,7 @@ public sealed partial class TxSignalEditRow : ObservableObject
         }
     }
 }
-public sealed record TraceFrameRow(long Index, DateTime Time, string Id, string Direction, byte Dlc, string Data, string Summary, IReadOnlyList<string> Bytes)
+public sealed record TraceFrameRow(long Index, DateTime Time, string Id, string Direction, byte Dlc, string Data, string Summary, IReadOnlyList<string> Bytes, CanFrame Frame)
 {
-    public static TraceFrameRow Empty { get; } = new(0, DateTime.MinValue, "—", "", 0, "", "Select a trace row to inspect its payload and decoded signals.", []);
+    public static TraceFrameRow Empty { get; } = new(0, DateTime.MinValue, "—", "", 0, "", "Select a trace row to inspect its payload and decoded signals.", [], default);
 }

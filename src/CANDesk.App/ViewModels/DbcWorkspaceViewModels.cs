@@ -427,6 +427,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     private Func<CanFrame, Task>? _sendFrameAsync;
     private ITxScheduler? _scheduler;
     private readonly Dictionary<TxJobRow, Guid> _cyclicJobIds = [];
+    private readonly Dictionary<TxJobRow, Guid> _triggeredJobIds = [];
     private Func<IReadOnlyList<string>>? _nodeNamesProvider;
     private Func<string, IReadOnlyList<DbcMessage>>? _nodeMessagesProvider;
     public ObservableCollection<TxJobRow> Jobs { get; } =
@@ -472,7 +473,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
             return;
         }
 
-        if (!_cyclicJobIds.TryGetValue(job, out var jobId))
+        if (!_cyclicJobIds.ContainsKey(job) && !_triggeredJobIds.ContainsKey(job))
         {
             return;
         }
@@ -489,7 +490,15 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
 
         try
         {
-            _scheduler?.UpdatePayload(jobId, bytes);
+            if (_cyclicJobIds.TryGetValue(job, out var cyclicJobId))
+            {
+                _scheduler?.UpdatePayload(cyclicJobId, bytes);
+            }
+
+            if (_triggeredJobIds.TryGetValue(job, out var triggeredJobId))
+            {
+                _scheduler?.UpdatePayload(triggeredJobId, bytes);
+            }
         }
         catch (KeyNotFoundException)
         {
@@ -572,7 +581,12 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
         {
             _scheduler?.Cancel(jobId);
         }
+        foreach (var jobId in _triggeredJobIds.Values)
+        {
+            _scheduler?.Cancel(jobId);
+        }
         _cyclicJobIds.Clear();
+        _triggeredJobIds.Clear();
         _scheduler = scheduler;
     }
 
@@ -633,11 +647,82 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void ToggleTriggered(TxJobRow? job)
+    {
+        if (job is null) return;
+        if (_triggeredJobIds.Remove(job, out var jobId))
+        {
+            _scheduler?.Cancel(jobId);
+            job.IsTriggered = false;
+            LastSendError = string.Empty;
+            return;
+        }
+        if (_scheduler is null)
+        {
+            LastSendError = "Connect a CAN device before scheduling triggered transmission.";
+            return;
+        }
+        try
+        {
+            var triggerId = ParseCanId(job.TriggerId);
+            var triggerMask = ParseCanId(job.TriggerMask);
+            var pattern = ParsePayload(job.TriggerPayloadPattern);
+            var delay = ParseDelay(job.ResponseDelayMs);
+            var repeatCount = ParseRepeatCount(job.RepeatCountText);
+            var modifier = E2EProfile1.CreateModifier(job.AutoCounter, job.E2eCrc);
+            var rule = new TriggeredTxRule(triggerId, triggerMask, pattern, CreateFrame(job), delay, repeatCount);
+            _triggeredJobIds.Add(job, _scheduler.ScheduleTriggered(rule.ResponseFrame, rule, rule.ResponseDelay, rule.RepeatCount, modifier));
+            job.IsTriggered = true;
+            LastSendError = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            LastSendError = exception.Message;
+        }
+    }
+
     private static CanFrame CreateFrame(TxJobRow job)
     {
-        var idText = job.Id.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? job.Id[2..] : job.Id;
-        var payloadText = job.Payload.Replace(" ", string.Empty, StringComparison.Ordinal);
-        return CanFrame.Create(Convert.ToUInt32(idText, 16), Convert.FromHexString(payloadText));
+        return CanFrame.Create(ParseCanId(job.Id), ParsePayload(job.Payload));
+    }
+
+    private static uint ParseCanId(string text)
+    {
+        var trimmed = text.Trim();
+        var idText = trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? trimmed[2..] : trimmed;
+        return Convert.ToUInt32(idText, 16);
+    }
+
+    private static byte[] ParsePayload(string text)
+    {
+        var payloadText = text.Replace(" ", string.Empty, StringComparison.Ordinal);
+        return string.IsNullOrWhiteSpace(payloadText) ? [] : Convert.FromHexString(payloadText);
+    }
+
+    private static TimeSpan ParseDelay(string text)
+    {
+        if (!double.TryParse(text.Replace("ms", string.Empty, StringComparison.OrdinalIgnoreCase).Trim(), out var milliseconds) || milliseconds < 0)
+        {
+            throw new InvalidOperationException("Response delay must be zero or a positive millisecond value.");
+        }
+
+        return TimeSpan.FromMilliseconds(milliseconds);
+    }
+
+    private static int? ParseRepeatCount(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(text.Trim(), out var repeatCount) || repeatCount <= 0)
+        {
+            throw new InvalidOperationException("Repeat count must be blank or a positive integer.");
+        }
+
+        return repeatCount;
     }
 }
 

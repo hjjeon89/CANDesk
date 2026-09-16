@@ -43,6 +43,24 @@ public sealed class DeviceConnectionService(IEnumerable<ICanDeviceFactory> facto
         try { await device.OpenAsync(configuration, cancellationToken).ConfigureAwait(false); CurrentDevice = device; }
         catch { await device.DisposeAsync().ConfigureAwait(false); throw; }
     }
+
+    public async Task ConnectDeviceAsync(ICanDevice device, CanBusConfig configuration, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        configuration.Validate();
+        await DisconnectAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await device.OpenAsync(configuration, cancellationToken).ConfigureAwait(false);
+            CurrentDevice = device;
+        }
+        catch
+        {
+            await device.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         if (CurrentDevice is null) return;

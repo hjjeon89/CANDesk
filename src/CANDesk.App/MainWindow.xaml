@@ -17,6 +17,8 @@
             <MenuItem Header="Save Message Database..." Command="{Binding MessageDbEditor.SaveCommand}" />
             <MenuItem Header="Export Message Database as DBC..." Command="{Binding MessageDbEditor.ExportDbcCommand}" />
             <Separator />
+            <MenuItem Header="Import Trace..." Command="{Binding ImportTraceCommand}" />
+            <MenuItem Header="Replay Imported Trace" Command="{Binding ReplayImportedTraceCommand}" />
             <MenuItem Header="Export Trace..." Command="{Binding ExportTraceCommand}" />
             <Separator />
             <MenuItem Header="E_xit" Command="ApplicationCommands.Close" />

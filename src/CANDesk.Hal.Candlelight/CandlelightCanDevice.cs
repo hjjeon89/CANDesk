@@ -10,7 +10,7 @@ namespace CANDesk.Hal.Candlelight;
 /// CAN-FD uses the ElmueSoft variable-length protocol implemented by the reference checker.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class CandlelightCanDevice(string devicePath, string channelName) : ICanDevice
+internal sealed class CandlelightCanDevice : ICanDevice
 {
     private const int ChannelIndex = 0;
     private const uint CanEffFlag = 0x8000_0000;
@@ -60,21 +60,32 @@ internal sealed class CandlelightCanDevice(string devicePath, string channelName
     private const byte ErrorAppUsbInOverflow = 0x08;
     private const byte ErrorAppTxTimeout = 0x10;
 
-    private readonly Channel<CanFrame> _frames = Channel.CreateBounded<CanFrame>(
-        new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly string _devicePath;
+    private readonly Channel<CanFrame> _frames;
     private readonly CancellationTokenSource _lifetime = new();
     private WinUsbDevice? _device;
     private CancellationTokenSource? _sessionCancellation;
     private Task? _readLoop;
     private uint _nextEchoId;
+    private long _dropped;
     private int _disposeState;
     private bool _useElmueProtocol;
     private string? _lastElmueError;
     private DateTime _lastElmueErrorAtUtc;
     private int _suppressedElmueErrorCount;
 
-    public string ChannelName { get; } = channelName;
+    public CandlelightCanDevice(string devicePath, string channelName)
+    {
+        _devicePath = devicePath;
+        ChannelName = channelName;
+        _frames = Channel.CreateBounded<CanFrame>(
+            new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest },
+            _ => Interlocked.Increment(ref _dropped));
+    }
+
+    public string ChannelName { get; }
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
+    public long DroppedFrameCount => Interlocked.Read(ref _dropped);
 
     public event EventHandler<CanErrorEventArgs>? ErrorOccurred;
     public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged;
@@ -92,7 +103,7 @@ internal sealed class CandlelightCanDevice(string devicePath, string channelName
         WinUsbDevice? device = null;
         try
         {
-            device = WinUsbDevice.Open(devicePath);
+            device = WinUsbDevice.Open(_devicePath);
             SendHostFormat(device);
             _ = ReadDeviceConfig(device);
             SetMode(device, ModeReset, DeviceFlagProtocolElmue);

@@ -20,6 +20,7 @@ public interface ITxScheduler : IAsyncDisposable
     event EventHandler<CanFrame>? FrameSent;
     Guid ScheduleCyclic(CanFrame templateFrame, TimeSpan period, PreSendModifier? preSendModifier = null);
     Guid ScheduleTriggered(CanFrame templateFrame, ITriggerCondition trigger, PreSendModifier? preSendModifier = null);
+    Guid ScheduleTriggered(CanFrame templateFrame, ITriggerCondition trigger, TimeSpan responseDelay, int? repeatCount = null, PreSendModifier? preSendModifier = null);
     ValueTask SendOnceAsync(CanFrame frame, CancellationToken cancellationToken = default);
     void NotifyReceived(in CanFrame frame);
     void Cancel(Guid jobId);
@@ -35,14 +36,17 @@ public sealed class TxSchedulerErrorEventArgs(Guid jobId, CanFrame frame, Except
 
 public sealed class TxScheduler(ICanDevice device) : ITxScheduler
 {
-    private sealed class Job(CanFrame frame, PreSendModifier? modifier, TimeSpan? period = null, ITriggerCondition? trigger = null)
+    private sealed class Job(CanFrame frame, PreSendModifier? modifier, TimeSpan? period = null, ITriggerCondition? trigger = null, TimeSpan? responseDelay = null, int? repeatLimit = null)
     {
         public readonly object Gate = new();
         public CanFrame Frame = frame;
         public ulong SendCount;
+        public int TriggerCount;
         public readonly PreSendModifier? Modifier = modifier;
         public readonly TimeSpan? Period = period;
         public readonly ITriggerCondition? Trigger = trigger;
+        public readonly TimeSpan ResponseDelay = responseDelay ?? TimeSpan.Zero;
+        public readonly int? RepeatLimit = repeatLimit;
         public CancellationTokenSource? Cancellation;
     }
     private readonly ConcurrentDictionary<Guid, Job> _jobs = new();
@@ -68,11 +72,27 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
     }
 
     public Guid ScheduleTriggered(CanFrame templateFrame, ITriggerCondition trigger, PreSendModifier? preSendModifier = null)
+        => ScheduleTriggered(templateFrame, trigger, TimeSpan.Zero, repeatCount: null, preSendModifier);
+
+    public Guid ScheduleTriggered(CanFrame templateFrame, ITriggerCondition trigger, TimeSpan responseDelay, int? repeatCount = null, PreSendModifier? preSendModifier = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
+        if (responseDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(responseDelay));
+        }
+
+        if (repeatCount is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(repeatCount));
+        }
 
         var id = Guid.NewGuid();
-        _jobs[id] = new Job(templateFrame, preSendModifier, trigger: trigger);
+        var job = new Job(templateFrame, preSendModifier, trigger: trigger, responseDelay: responseDelay, repeatLimit: repeatCount)
+        {
+            Cancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token)
+        };
+        _jobs[id] = job;
         return id;
     }
 
@@ -87,7 +107,26 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
         var received = frame;
         foreach (var pair in _jobs.Where(pair => pair.Value.Trigger?.IsSatisfied(received) == true))
         {
-            _ = SendJobSafelyAsync(pair.Key, pair.Value, _shutdown.Token);
+            if (!TryClaimTrigger(pair.Key, pair.Value))
+            {
+                continue;
+            }
+
+            _ = SendTriggeredJobSafelyAsync(pair.Key, pair.Value, pair.Value.Cancellation?.Token ?? _shutdown.Token);
+        }
+    }
+
+    private bool TryClaimTrigger(Guid jobId, Job job)
+    {
+        lock (job.Gate)
+        {
+            if (job.RepeatLimit is not null && job.TriggerCount >= job.RepeatLimit.Value)
+            {
+                return false;
+            }
+
+            job.TriggerCount++;
+            return true;
         }
     }
 
@@ -156,6 +195,30 @@ public sealed class TxScheduler(ICanDevice device) : ITxScheduler
     private async Task SendJobSafelyAsync(Guid jobId, Job job, CancellationToken ct)
     {
         try { await SendJobAsync(job, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            CanFrame frame;
+            lock (job.Gate) frame = job.Frame;
+            ErrorOccurred?.Invoke(this, new(jobId, frame, exception));
+        }
+    }
+
+    private async Task SendTriggeredJobSafelyAsync(Guid jobId, Job job, CancellationToken ct)
+    {
+        try
+        {
+            if (job.ResponseDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(job.ResponseDelay, ct).ConfigureAwait(false);
+            }
+
+            await SendJobAsync(job, ct).ConfigureAwait(false);
+            if (job.RepeatLimit is not null && Volatile.Read(ref job.TriggerCount) >= job.RepeatLimit.Value)
+            {
+                _jobs.TryRemove(jobId, out _);
+            }
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception exception)
         {

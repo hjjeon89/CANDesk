@@ -12,17 +12,18 @@ namespace CANDesk.Hal.Peak;
 /// handle — and a documented follow-up if latency/CPU under load turns out to matter.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDevice
+internal sealed class PeakCanDevice : ICanDevice
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(1);
     private static readonly TimeSpan StatusPollInterval = TimeSpan.FromMilliseconds(200);
 
-    private readonly Channel<CanFrame> _frames = Channel.CreateBounded<CanFrame>(
-        new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly ushort _channel;
+    private readonly Channel<CanFrame> _frames;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _sessionCancellation;
     private Task? _readLoop;
     private Task? _statusLoop;
+    private long _dropped;
     private int _disposeState;
     // TPCANTimestamp is a millisecond counter that (per PCAN-Basic's documented behavior) restarts
     // near zero at CAN_Initialize, not a wall-clock time — anchoring it to the wall clock at Open
@@ -30,8 +31,18 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
     // which added polling-loop/scheduler jitter noise to Monitor/Trace's Cycle Time readings.
     private DateTime _timeBaseUtc;
 
-    public string ChannelName { get; } = channelName;
+    public PeakCanDevice(ushort channel, string channelName)
+    {
+        _channel = channel;
+        ChannelName = channelName;
+        _frames = Channel.CreateBounded<CanFrame>(
+            new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest },
+            _ => Interlocked.Increment(ref _dropped));
+    }
+
+    public string ChannelName { get; }
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
+    public long DroppedFrameCount => Interlocked.Read(ref _dropped);
 
     public event EventHandler<CanErrorEventArgs>? ErrorOccurred;
     public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged;
@@ -54,11 +65,11 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
             : PeakBitTiming.FromPreset(config.NominalTiming.Preset!);
 
         SetStatus(CanDeviceStatus.Opening);
-        var result = PCanBasicNative.Initialize(channel, btr0Btr1, hwType: 0, ioPort: 0, interrupt: 0);
+        var result = PCanBasicNative.Initialize(_channel, btr0Btr1, hwType: 0, ioPort: 0, interrupt: 0);
         if (result != PCanBasicNative.StatusOk)
         {
             SetStatus(CanDeviceStatus.Faulted);
-            throw new InvalidOperationException($"CAN_Initialize failed for channel 0x{channel:X}: PCAN status 0x{result:X}.");
+            throw new InvalidOperationException($"CAN_Initialize failed for channel 0x{_channel:X}: PCAN status 0x{result:X}.");
         }
 
         _timeBaseUtc = DateTime.UtcNow;
@@ -91,7 +102,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
         _statusLoop = null;
         _sessionCancellation?.Dispose();
         _sessionCancellation = null;
-        PCanBasicNative.Uninitialize(channel);
+        PCanBasicNative.Uninitialize(_channel);
     }
 
     public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default)
@@ -114,10 +125,10 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
             }
         }
 
-        var result = PCanBasicNative.Write(channel, ref message);
+        var result = PCanBasicNative.Write(_channel, ref message);
         if (result != PCanBasicNative.StatusOk)
         {
-            throw new InvalidOperationException($"CAN_Write failed for channel 0x{channel:X}: PCAN status 0x{result:X}.");
+            throw new InvalidOperationException($"CAN_Write failed for channel 0x{_channel:X}: PCAN status 0x{result:X}.");
         }
 
         return ValueTask.CompletedTask;
@@ -135,10 +146,10 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
     public Task ResetBusAsync(CancellationToken cancellationToken = default)
     {
         EnsureOpen();
-        var result = PCanBasicNative.Reset(channel);
+        var result = PCanBasicNative.Reset(_channel);
         if (result != PCanBasicNative.StatusOk)
         {
-            throw new InvalidOperationException($"CAN_Reset failed for channel 0x{channel:X}: PCAN status 0x{result:X}.");
+            throw new InvalidOperationException($"CAN_Reset failed for channel 0x{_channel:X}: PCAN status 0x{result:X}.");
         }
 
         SetStatus(CanDeviceStatus.Open);
@@ -151,7 +162,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
         {
             while (!ct.IsCancellationRequested)
             {
-                var result = PCanBasicNative.Read(channel, out var message, out var timestamp);
+                var result = PCanBasicNative.Read(_channel, out var message, out var timestamp);
                 if (result == PCanBasicNative.StatusQueueReceiveEmpty)
                 {
                     await Task.Delay(PollInterval, ct).ConfigureAwait(false);
@@ -187,7 +198,7 @@ internal sealed class PeakCanDevice(ushort channel, string channelName) : ICanDe
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(StatusPollInterval, ct).ConfigureAwait(false);
-                var status = PCanBasicNative.GetStatus(channel);
+                var status = PCanBasicNative.GetStatus(_channel);
                 if (status == PCanBasicNative.StatusOk)
                 {
                     continue;

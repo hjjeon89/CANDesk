@@ -14,19 +14,30 @@ public enum MockCanMode
 /// <summary>One frame in a mock trace; delay is measured from the previous frame.</summary>
 public sealed record MockTraceFrame(CanFrame Frame, TimeSpan Delay);
 
-public sealed class MockCanDevice(string channelName, MockCanMode mode = MockCanMode.Loopback) : ICanDevice
+public sealed class MockCanDevice : ICanDevice
 {
-    private readonly Channel<CanFrame> _frames = Channel.CreateBounded<CanFrame>(new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly Channel<CanFrame> _frames;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _traceGate = new();
     private IReadOnlyList<MockTraceFrame> _tracePlayback = [];
     private CancellationTokenSource? _sessionCancellation;
     private Task? _modeTask;
+    private long _dropped;
     private int _disposeState;
 
-    public string ChannelName { get; } = channelName;
-    public MockCanMode Mode { get; set; } = mode;
+    public MockCanDevice(string channelName, MockCanMode mode = MockCanMode.Loopback)
+    {
+        ChannelName = channelName;
+        Mode = mode;
+        _frames = Channel.CreateBounded<CanFrame>(
+            new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest },
+            _ => Interlocked.Increment(ref _dropped));
+    }
+
+    public string ChannelName { get; }
+    public MockCanMode Mode { get; set; }
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
+    public long DroppedFrameCount => Interlocked.Read(ref _dropped);
 
     public event EventHandler<CanErrorEventArgs>? ErrorOccurred;
     public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged;

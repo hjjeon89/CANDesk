@@ -11,18 +11,19 @@ namespace CANDesk.Hal.Vector;
 /// <c>xlGetChannelMask</c>). Classic CAN only; see <see cref="VectorXlNative"/> remarks.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class VectorCanDevice(ulong channelMask, string channelName) : ICanDevice
+internal sealed class VectorCanDevice : ICanDevice
 {
     private static readonly TimeSpan NotificationTimeout = TimeSpan.FromMilliseconds(50);
 
-    private readonly Channel<CanFrame> _frames = Channel.CreateBounded<CanFrame>(
-        new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly ulong _channelMask;
+    private readonly Channel<CanFrame> _frames;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _sessionCancellation;
     private IDisposable? _driverScope;
     private AutoResetEvent? _notification;
     private Task? _readLoop;
     private int _portHandle;
+    private long _dropped;
     private int _disposeState;
     // xlEvent.TimeStamp is nanoseconds since an arbitrary driver epoch, not wall-clock time.
     // xlResetClock zeroes it at Open so anchoring it to the wall clock here gives each frame a real
@@ -30,8 +31,18 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
     // notification/polling-loop jitter noise to Monitor/Trace's Cycle Time readings.
     private DateTime _timeBaseUtc;
 
-    public string ChannelName { get; } = channelName;
+    public VectorCanDevice(ulong channelMask, string channelName)
+    {
+        _channelMask = channelMask;
+        ChannelName = channelName;
+        _frames = Channel.CreateBounded<CanFrame>(
+            new BoundedChannelOptions(32_768) { FullMode = BoundedChannelFullMode.DropOldest },
+            _ => Interlocked.Increment(ref _dropped));
+    }
+
+    public string ChannelName { get; }
     public CanDeviceStatus Status { get; private set; } = CanDeviceStatus.Closed;
+    public long DroppedFrameCount => Interlocked.Read(ref _dropped);
 
     public event EventHandler<CanErrorEventArgs>? ErrorOccurred;
     public event EventHandler<CanDeviceStatusChangedEventArgs>? StatusChanged;
@@ -53,18 +64,18 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
         var driverScope = VectorDriverScope.Acquire();
         try
         {
-            var openStatus = VectorXlNative.OpenPort(out var portHandle, VectorXlNative.ApplicationName, channelMask,
+            var openStatus = VectorXlNative.OpenPort(out var portHandle, VectorXlNative.ApplicationName, _channelMask,
                 out var permissionMask, rxQueueSize: 8192, VectorXlNative.InterfaceVersionV3, VectorXlNative.BusTypeCan);
             if (openStatus != 0)
             {
-                throw new InvalidOperationException($"xlOpenPort failed for channel mask 0x{channelMask:X}: XL status {openStatus}.");
+                throw new InvalidOperationException($"xlOpenPort failed for channel mask 0x{_channelMask:X}: XL status {openStatus}.");
             }
 
             _portHandle = portHandle;
 
             // Only a port with init access (its bits set in permissionMask) may configure the bitrate;
             // when another application already owns and configured this channel, skip rather than fail.
-            var initAccessMask = permissionMask & channelMask;
+            var initAccessMask = permissionMask & _channelMask;
             if (initAccessMask != 0)
             {
                 var bitrateStatus = VectorXlNative.CanSetChannelBitrate(portHandle, initAccessMask, (uint)config.Nominal.BitrateKbps * 1000u);
@@ -74,10 +85,10 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
                 }
             }
 
-            var activateStatus = VectorXlNative.ActivateChannel(portHandle, channelMask, VectorXlNative.BusTypeCan, 0);
+            var activateStatus = VectorXlNative.ActivateChannel(portHandle, _channelMask, VectorXlNative.BusTypeCan, 0);
             if (activateStatus != 0)
             {
-                throw new InvalidOperationException($"xlActivateChannel failed for channel mask 0x{channelMask:X}: XL status {activateStatus}.");
+                throw new InvalidOperationException($"xlActivateChannel failed for channel mask 0x{_channelMask:X}: XL status {activateStatus}.");
             }
 
             // Best-effort: even if this fails, _timeBaseUtc is still anchored to "now" below, which
@@ -128,7 +139,7 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
         _sessionCancellation?.Dispose();
         _sessionCancellation = null;
 
-        VectorXlNative.DeactivateChannel(_portHandle, channelMask);
+        VectorXlNative.DeactivateChannel(_portHandle, _channelMask);
         VectorXlNative.ClosePort(_portHandle);
         _notification?.Dispose();
         _notification = null;
@@ -146,10 +157,10 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
         VectorXlNative.WriteCanMsg(ref xlEvent, id, flags, frame.PayloadLength, frame.PayloadSpan);
 
         var messageCount = 1u;
-        var status = VectorXlNative.CanTransmit(_portHandle, channelMask, ref messageCount, ref xlEvent);
+        var status = VectorXlNative.CanTransmit(_portHandle, _channelMask, ref messageCount, ref xlEvent);
         if (status != 0)
         {
-            throw new InvalidOperationException($"xlCanTransmit failed for channel mask 0x{channelMask:X}: XL status {status}.");
+            throw new InvalidOperationException($"xlCanTransmit failed for channel mask 0x{_channelMask:X}: XL status {status}.");
         }
 
         return ValueTask.CompletedTask;
@@ -170,11 +181,11 @@ internal sealed class VectorCanDevice(ulong channelMask, string channelName) : I
     public Task ResetBusAsync(CancellationToken cancellationToken = default)
     {
         EnsureOpen();
-        VectorXlNative.DeactivateChannel(_portHandle, channelMask);
-        var status = VectorXlNative.ActivateChannel(_portHandle, channelMask, VectorXlNative.BusTypeCan, 0);
+        VectorXlNative.DeactivateChannel(_portHandle, _channelMask);
+        var status = VectorXlNative.ActivateChannel(_portHandle, _channelMask, VectorXlNative.BusTypeCan, 0);
         if (status != 0)
         {
-            throw new InvalidOperationException($"xlActivateChannel (reset) failed for channel mask 0x{channelMask:X}: XL status {status}.");
+            throw new InvalidOperationException($"xlActivateChannel (reset) failed for channel mask 0x{_channelMask:X}: XL status {status}.");
         }
 
         SetStatus(CanDeviceStatus.Open);
