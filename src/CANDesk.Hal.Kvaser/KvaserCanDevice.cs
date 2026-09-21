@@ -174,18 +174,49 @@ internal sealed class KvaserCanDevice : ICanDevice
         }
     }
 
+    private static int GetPresetBitrateConstant(int bitrateKbps) => bitrateKbps switch
+    {
+        1000 => KvaserCanlibNative.Bitrate1M,
+        500 => KvaserCanlibNative.Bitrate500K,
+        250 => KvaserCanlibNative.Bitrate250K,
+        125 => KvaserCanlibNative.Bitrate125K,
+        100 => KvaserCanlibNative.Bitrate100K,
+        62 or 63 => KvaserCanlibNative.Bitrate62K,
+        50 => KvaserCanlibNative.Bitrate50K,
+        83 => KvaserCanlibNative.Bitrate83K,
+        10 => KvaserCanlibNative.Bitrate10K,
+        _ => 0
+    };
+
     private static void ConfigureBitrate(int handle, CanBusConfig config)
     {
         var timing = config.NominalTiming;
-        var bitrate = config.Nominal.BitrateKbps * 1_000L;
-        if (timing.InputMode == BitTimingInputMode.RawSegments)
+        if (timing.InputMode == BitTimingInputMode.RawSegments && timing.RawSegments is not null)
         {
-            var raw = timing.RawSegments!;
+            var raw = timing.RawSegments;
+            var bitrate = checked((int)(config.Nominal.BitrateKbps * 1_000));
             CheckStatus(KvaserCanlibNative.SetBusParams(handle, bitrate, (uint)raw.Tseg1, (uint)raw.Tseg2, (uint)raw.Sjw, 1, 0), "canSetBusParams");
             return;
         }
 
-        CheckStatus(KvaserCanlibNative.SetBusParams(handle, bitrate, 0, 0, 0, 1, 0), "canSetBusParams");
+        var presetConstant = GetPresetBitrateConstant(config.Nominal.BitrateKbps);
+        if (presetConstant != 0)
+        {
+            CheckStatus(KvaserCanlibNative.SetBusParams(handle, presetConstant, 0, 0, 0, 1, 0), "canSetBusParams");
+            return;
+        }
+
+        var freq = checked((int)(config.Nominal.BitrateKbps * 1_000));
+        var translateStatus = KvaserCanlibNative.TranslateBaud(ref freq, out var tseg1, out var tseg2, out var sjw, out var noSamp, out var syncMode);
+        if (translateStatus == KvaserCanlibNative.StatusOk)
+        {
+            CheckStatus(KvaserCanlibNative.SetBusParams(handle, freq, tseg1, tseg2, sjw, noSamp, syncMode), "canSetBusParams");
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"Kvaser Classic CAN does not have a standard preset for {config.Nominal.BitrateKbps} kbps. " +
+            "Please use Advanced timing mode (RawSegments) to configure BRP/TSeg1/TSeg2/SJW directly.");
     }
 
     private static uint ToKvaserFlags(CanFrameFlags flags)

@@ -22,6 +22,16 @@ internal static class KvaserCanlibNative
     public const uint MessageExtended = 0x0004;
     public const uint MessageErrorFrame = 0x0020;
 
+    public const int Bitrate1M = -1;
+    public const int Bitrate500K = -2;
+    public const int Bitrate250K = -3;
+    public const int Bitrate125K = -4;
+    public const int Bitrate100K = -5;
+    public const int Bitrate62K = -6;
+    public const int Bitrate50K = -7;
+    public const int Bitrate83K = -8;
+    public const int Bitrate10K = -9;
+
     [DllImport(DllName, EntryPoint = "canInitializeLibrary")]
     public static extern void InitializeLibrary();
 
@@ -35,7 +45,10 @@ internal static class KvaserCanlibNative
     public static extern int OpenChannel(int channel, int flags);
 
     [DllImport(DllName, EntryPoint = "canSetBusParams")]
-    public static extern int SetBusParams(int handle, long freq, uint tseg1, uint tseg2, uint sjw, uint noSamp, uint syncMode);
+    public static extern int SetBusParams(int handle, int freq, uint tseg1, uint tseg2, uint sjw, uint noSamp, uint syncMode);
+
+    [DllImport(DllName, EntryPoint = "canTranslateBaud")]
+    public static extern int TranslateBaud(ref int freq, out uint tseg1, out uint tseg2, out uint sjw, out uint noSamp, out uint syncMode);
 
     [DllImport(DllName, EntryPoint = "canSetBusOutputControl")]
     public static extern int SetBusOutputControl(int handle, uint driverType);
