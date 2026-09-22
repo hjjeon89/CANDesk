@@ -8,7 +8,41 @@
   <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderThickness" Value="0"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/></Trigger></Style.Triggers></Style>
   <Style TargetType="TextBox"><Setter Property="Padding" Value="8,5"/><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextMainBrush}"/><Setter Property="CaretBrush" Value="{DynamicResource TextMainBrush}"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox"><Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}"><ScrollViewer x:Name="PART_ContentHost"/></Border><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Root" Property="BorderThickness" Value="2"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Root" Property="Background" Value="{DynamicResource PanelBrush}"/><Setter TargetName="Root" Property="Opacity" Value=".5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Cursor" Value="Arrow"/></Trigger></Style.Triggers></Style>
   <Style TargetType="ToggleButton"><Setter Property="Padding" Value="9,5"/><Setter Property="Background" Value="{DynamicResource PanelBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton"><Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource AccentSoftBrush}"/><Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-  <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+  <!-- Explicit checked/unchecked box: the default OS-drawn checkbox glyph barely shows against
+       this app's dark theme, so the checked state (e.g. Transmit's "Cyclic" indicator) was hard
+       to read at a glance. Checked now fills the box with the accent color plus a checkmark. -->
+  <Style TargetType="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource TextSubBrush}"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="CheckBox">
+          <StackPanel Orientation="Horizontal">
+            <Border x:Name="Box" Width="16" Height="16" CornerRadius="3" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1.4" VerticalAlignment="Center">
+              <Path x:Name="Check" Data="M 2,7 L 6,11 L 13,3" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed"/>
+            </Border>
+            <ContentPresenter x:Name="Content" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Content" Value="{x:Null}">
+              <Setter TargetName="Content" Property="Margin" Value="0"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}"/>
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+              <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value=".55"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
   <Style TargetType="ComboBox">
     <Setter Property="Padding" Value="7,4"/>
     <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
@@ -227,6 +261,22 @@
     <Setter Property="TextAlignment" Value="Center"/>
   </Style>
 
+  <!-- Editable pill: an id badge (Transmit's CAN ID) that's also a text field, borderless/transparent
+       so it reads as part of the colored Border it sits in rather than as its own control. -->
+  <Style x:Key="IdBadgeTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="MinWidth" Value="46"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <ScrollViewer x:Name="PART_ContentHost" Background="Transparent"/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Pill badges: CAN ID / direction chips -->
   <Style x:Key="IdBadgeStyle" TargetType="Border">
     <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
@@ -351,6 +401,45 @@
                 </Setter.Value>
               </Setter>
               <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Collapsible section header (e.g. Transmit job's "SIGNAL VALUES" block): rotating disclosure
+       glyph plus label, whole row clickable, toggling a plain bool IsExpanded-style property. -->
+  <Style x:Key="SectionExpanderToggleStyle" TargetType="ToggleButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="HorizontalAlignment" Value="Left"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Padding" Value="2,4"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border x:Name="Root" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+            <StackPanel Orientation="Horizontal">
+              <Path x:Name="Arrow" Width="14" Height="14" Data="M 1,1 L 5,5 L 1,9" Stroke="{DynamicResource MutedTextBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                <Path.RenderTransform>
+                  <RotateTransform Angle="0"/>
+                </Path.RenderTransform>
+              </Path>
+              <ContentPresenter Margin="5,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Arrow" Property="RenderTransform">
+                <Setter.Value>
+                  <RotateTransform Angle="90"/>
+                </Setter.Value>
+              </Setter>
+              <Setter TargetName="Arrow" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Root" Property="Background" Value="{DynamicResource PanelSubBrush}"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

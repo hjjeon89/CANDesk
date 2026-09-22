@@ -1,1 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="..\CANDesk.Hal\CANDesk.Hal.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\CANDesk.Hal\CANDesk.Hal.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- DbcParser needs CP949 (Korean EUC-KR) to decode DBC files that save unit strings like
+         "℃" in that codepage rather than UTF-8/Latin-1; .NET Core has no built-in codepages beyond
+         UTF-8/UTF-16/ASCII/Latin-1, so this package plus CodePagesEncodingProvider registration is
+         required to resolve Encoding.GetEncoding(949) at all. -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+</Project>

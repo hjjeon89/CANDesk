@@ -28,12 +28,17 @@
             <Border Style="{StaticResource PanelCardStyle}" Padding="10" Margin="0,0,0,8">
               <StackPanel>
                 <DockPanel>
-                  <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" ToolTip="Cyclic transmission is active" />
+                  <CheckBox IsChecked="{Binding IsEnabled}" IsHitTestVisible="False" VerticalAlignment="Center" ToolTip="Cyclic transmission is active" />
                   <CheckBox IsChecked="{Binding IsTriggered}" IsHitTestVisible="False" VerticalAlignment="Center" Margin="6,0,0,0" ToolTip="Triggered transmission is active" />
                   <Border Style="{StaticResource IdBadgeStyle}" Background="{DynamicResource WarningSoftBrush}" Margin="7,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Id}" Style="{StaticResource IdBadgeTextStyle}" Foreground="{DynamicResource WarningBrush}" />
+                    <TextBox Text="{Binding Id, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource IdBadgeTextBoxStyle}"
+                             FontFamily="{DynamicResource MonoFontFamily}" FontWeight="SemiBold" FontSize="11"
+                             Foreground="{DynamicResource WarningBrush}" CaretBrush="{DynamicResource WarningBrush}"
+                             ToolTip="CAN ID in hex, e.g. 0x100. IDs above 0x7FF auto-check &quot;Ext&quot; below." />
                   </Border>
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  <CheckBox Content="Ext" IsChecked="{Binding IsExtended}" VerticalAlignment="Center" Margin="10,0,0,0"
+                            ToolTip="29-bit extended CAN ID. Auto-checked when the ID is above 0x7FF; uncheck only if you need a small ID sent as extended anyway." />
                   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="Cyclic" Padding="8,3" FontSize="11" Command="{Binding DataContext.ToggleCyclicCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                     <Button Content="Trigger" Padding="8,3" FontSize="11" Command="{Binding DataContext.ToggleTriggeredCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
@@ -43,9 +48,8 @@
                 <UniformGrid Columns="2" Margin="0,10,0,8">
                   <StackPanel Margin="0,0,6,0">
                     <TextBlock Text="CYCLE PERIOD" Style="{StaticResource CaptionTextStyle}" />
-                    <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,3,0,0">
-                      <TextBlock Text="{Binding Period}" FontFamily="{DynamicResource MonoFontFamily}" />
-                    </Border>
+                    <TextBox Text="{Binding Period, UpdateSourceTrigger=PropertyChanged}" FontFamily="{DynamicResource MonoFontFamily}" Margin="0,3,0,0"
+                             ToolTip="e.g. '20 ms'. 0 (or blank) means Send Now only — pressing Cyclic won't start anything. Applies the next time Cyclic is started; editing while already running has no effect until Stop then Cyclic again." />
                   </StackPanel>
                   <StackPanel Margin="6,0,0,0">
                     <TextBlock Text="DLC (BYTES)" Style="{StaticResource CaptionTextStyle}" />
@@ -54,20 +58,43 @@
                     </Border>
                   </StackPanel>
                 </UniformGrid>
-                <ItemsControl ItemsSource="{Binding Signals}" Margin="0,0,0,4">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Grid Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="76" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" Foreground="{DynamicResource TextSubBrush}" />
-                        <TextBox Grid.Column="1" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <StackPanel>
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Signals.Count}" Value="0">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </StackPanel.Style>
+                  <ToggleButton Style="{StaticResource SectionExpanderToggleStyle}" IsChecked="{Binding IsSignalsExpanded, Mode=TwoWay}" Margin="0,6,0,2">
+                    <TextBlock Text="{Binding Signals.Count, StringFormat='SIGNAL VALUES ({0})'}" Style="{StaticResource CaptionTextStyle}" />
+                  </ToggleButton>
+                  <ItemsControl ItemsSource="{Binding Signals}" Margin="0,0,0,4">
+                    <ItemsControl.Style>
+                      <Style TargetType="ItemsControl">
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsSignalsExpanded}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ItemsControl.Style>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Margin="0,0,0,5">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="76" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" Foreground="{DynamicResource TextSubBrush}" />
+                          <TextBox Grid.Column="1" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
                 <TextBlock Text="PAYLOAD (HEX)" Style="{StaticResource CaptionTextStyle}" />
                 <TextBox Text="{Binding Payload}" FontFamily="{DynamicResource MonoFontFamily}" Margin="0,3,0,0" />
                 <StackPanel Orientation="Horizontal" Margin="0,9,0,0">

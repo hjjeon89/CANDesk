@@ -12,32 +12,7 @@ namespace CANDesk.App.ViewModels;
 
 public sealed partial class DbcSignalTreeViewModel : ObservableObject
 {
-    // Synthetic bit layouts for the built-in demo messages, so "Send to TX" and signal
-    // editing work out of the box before a real DBC is loaded.
-    private static readonly DbcMessage EngineStatusMessage = new(0x100, "EngineStatus", 8,
-    [
-        new("EngineSpeed", 0, 16, ByteOrder.Intel, false, 0.1, 0, Unit: "rpm"),
-        new("CoolantTemp", 16, 8, ByteOrder.Intel, false, 1, -40, Unit: "°C"),
-        new("EngineState", 24, 8, ByteOrder.Intel, false)
-    ]);
-    private static readonly DbcMessage BatteryPackStatusMessage = new(0x200, "BatteryPackStatus", 8,
-    [
-        new("PackVoltage", 0, 16, ByteOrder.Intel, false, 0.1, 0, Unit: "V"),
-        new("PackCurrent", 16, 16, ByteOrder.Intel, true, 0.1, 0, Unit: "A"),
-        new("StateOfCharge", 32, 8, ByteOrder.Intel, false, Unit: "%")
-    ]);
-    private static readonly DbcMessage VcuControlMessage = new(0x301, "VCU_Control", 8,
-    [
-        new("TorqueRequest", 0, 16, ByteOrder.Intel, true, Unit: "Nm"),
-        new("RollingCounter", 16, 8, ByteOrder.Intel, false)
-    ]);
-
-    public ObservableCollection<MessageTreeItem> Messages { get; } =
-    [
-        new("0x100", "EngineStatus", "10 ms | DLC: 8", [new("EngineSpeed", "2,450 rpm"), new("CoolantTemp", "87.5 C"), new("EngineState", "Running")], EngineStatusMessage),
-        new("0x200", "BatteryPackStatus", "50 ms | DLC: 8", [new("PackVoltage", "398.2 V"), new("PackCurrent", "-24.5 A"), new("StateOfCharge", "78 %")], BatteryPackStatusMessage),
-        new("0x301", "VCU_Control", "Cyclic | DLC: 8", [new("TorqueRequest", "120 Nm"), new("RollingCounter", "0")], VcuControlMessage)
-    ];
+    public ObservableCollection<MessageTreeItem> Messages { get; } = [];
 
     [ObservableProperty]
     private string _searchText = string.Empty;
@@ -430,11 +405,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     private readonly Dictionary<TxJobRow, Guid> _triggeredJobIds = [];
     private Func<IReadOnlyList<string>>? _nodeNamesProvider;
     private Func<string, IReadOnlyList<DbcMessage>>? _nodeMessagesProvider;
-    public ObservableCollection<TxJobRow> Jobs { get; } =
-    [
-        new("0x301", "VCU_Control", "20 ms", "8", "AA BB CC 00 00 00 00 12", true, true, true),
-        new("0x7DF", "OBD-II Req (Tester)", "Manual", "8", "02 01 0C 55 55 55 55 55", false, false, false)
-    ];
+    public ObservableCollection<TxJobRow> Jobs { get; } = [];
 
     public ObservableCollection<string> EmulatedNodes { get; } = [];
 
@@ -507,7 +478,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void AddJob() => Jobs.Add(new("0x000", "New TX Job", "Manual", "8", "00 00 00 00 00 00 00 00", false, false, false));
+    private void AddJob() => Jobs.Add(new("0x000", "New TX Job", "0", "8", "00 00 00 00 00 00 00 00", false, false, false));
 
     public void SetNodeEmulationProviders(
         Func<IReadOnlyList<string>> nodeNamesProvider,
@@ -558,7 +529,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     public TxJobRow AddJobFromMessage(DbcMessage message)
     {
         var zeroPayload = string.Join(' ', Enumerable.Repeat("00", message.Dlc));
-        var job = new TxJobRow($"0x{message.CanId:X3}", message.Name, "Manual", message.Dlc.ToString(), zeroPayload, false, false, false)
+        var job = new TxJobRow($"0x{message.CanId:X3}", message.Name, "0", message.Dlc.ToString(), zeroPayload, false, false, false, message.IsExtended)
         {
             Message = message
         };
@@ -682,9 +653,28 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
         }
     }
 
+    private const uint StandardIdMax = 0x7FF;
+    private const uint ExtendedIdMax = 0x1FFF_FFFF;
+
     private static CanFrame CreateFrame(TxJobRow job)
     {
-        return CanFrame.Create(ParseCanId(job.Id), ParsePayload(job.Payload));
+        var id = ParseCanId(job.Id);
+        if (id > ExtendedIdMax)
+        {
+            throw new InvalidOperationException($"CAN ID 0x{id:X} exceeds the 29-bit extended ID range (max 0x{ExtendedIdMax:X}).");
+        }
+
+        // A standard (11-bit) frame can't carry an ID above 0x7FF, so an ID that large only ever
+        // makes sense as extended — auto-promote rather than silently sending it as (invalid)
+        // standard, and reflect the correction back into the "Ext" checkbox so the UI doesn't show
+        // a stale unchecked state for a frame that actually went out extended.
+        if (id > StandardIdMax && !job.IsExtended)
+        {
+            job.IsExtended = true;
+        }
+
+        var flags = job.IsExtended ? CanFrameFlags.Extended : CanFrameFlags.None;
+        return CanFrame.Create(id, ParsePayload(job.Payload), flags);
     }
 
     private static uint ParseCanId(string text)

@@ -38,6 +38,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // flip a just-sent message's Direction back to "RX" in Monitor/Trace/Signal Monitor.
     private readonly ConcurrentDictionary<CanFrame, DateTime> _recentlyTransmitted = new();
     private static readonly TimeSpan EchoSuppressionWindow = TimeSpan.FromMilliseconds(250);
+    /// <summary>True while <see cref="LastDeviceError"/> holds a CAN bus TX/RX error (device
+    /// <c>ErrorOccurred</c> or TX scheduler <c>ErrorOccurred</c>), as opposed to an unrelated message
+    /// (connect failure, DB/trace import failure). Only errors flagged this way are auto-cleared once
+    /// traffic flows normally again, so e.g. a "Trace import failed" message isn't wiped out by the
+    /// next unrelated RX frame.</summary>
+    private volatile bool _busErrorActive;
     public event EventHandler? MessageEditorRequested;
     public event EventHandler? SignalMonitorRequested;
     public MessageMonitorViewModel Monitor { get; } = new();
@@ -126,7 +132,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var device = _connection.CurrentDevice ?? throw new InvalidOperationException("No CAN device is connected.");
         device.StatusChanged += (_, args) => DispatchToUi(() => Status = args.Status.ToString());
-        device.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"{args.Kind}: {args.Message}");
+        device.ErrorOccurred += (_, args) => DispatchToUi(() =>
+        {
+            LastDeviceError = $"{args.Kind}: {args.Message}";
+            _busErrorActive = true;
+        });
         if (_txScheduler is not null)
         {
             // No ConfigureAwait(false) here: this method later sets Status (line ~133), which must
@@ -140,7 +150,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         var txScheduler = new TxScheduler(device);
         _txScheduler = txScheduler;
-        txScheduler.ErrorOccurred += (_, args) => DispatchToUi(() => LastDeviceError = $"TX 0x{args.Frame.Id:X3}: {args.Exception.Message}");
+        txScheduler.ErrorOccurred += (_, args) => DispatchToUi(() =>
+        {
+            LastDeviceError = $"TX 0x{args.Frame.Id:X3}: {args.Exception.Message}";
+            _busErrorActive = true;
+        });
         // One subscription covers every send path (single, cyclic, triggered) so cyclic TX frames
         // are no longer invisible to Trace/Monitor, and TX rate counting doesn't miss them either.
         txScheduler.FrameSent += (_, frame) =>
@@ -154,6 +168,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Monitor.ProcessTransmittedFrame(frame);
                 SignalMonitor.ProcessTransmittedFrame(frame);
                 SignalPlot.ProcessTransmittedFrame(frame);
+                // A successful send means the bus is transmitting normally again; drop a stale
+                // TX/RX error so it doesn't linger once whatever caused it has resolved.
+                if (_busErrorActive)
+                {
+                    LastDeviceError = string.Empty;
+                    _busErrorActive = false;
+                }
             });
         };
         TransmitPanel.SetScheduler(txScheduler);
@@ -430,6 +451,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             OnPropertyChanged(nameof(DroppedFrameCount));
             OnPropertyChanged(nameof(DroppedFrameBrush));
+            // A genuine RX frame means the bus is receiving normally again; drop a stale TX/RX
+            // error so it doesn't linger once whatever caused it has resolved.
+            if (_busErrorActive)
+            {
+                LastDeviceError = string.Empty;
+                _busErrorActive = false;
+            }
             if (!IsCapturing) return;
             Monitor.ProcessFrames(rxFrames);
             TraceLog.ProcessFrames(rxFrames);
@@ -524,21 +552,20 @@ public sealed record MessageTreeItem(string Id, string Name, string Meta, IReadO
 public sealed record SignalTreeItem(string Name, string Value);
 public sealed partial class TxJobRow : ObservableObject
 {
-    public TxJobRow(string id, string name, string period, string dlc, string payload, bool isEnabled, bool autoCounter, bool e2eCrc)
+    public TxJobRow(string id, string name, string period, string dlc, string payload, bool isEnabled, bool autoCounter, bool e2eCrc, bool isExtended = false)
     {
-        Id = id;
+        _id = id;
         Name = name;
-        Period = period;
+        _period = period;
         Dlc = dlc;
         _payload = payload;
         _isEnabled = isEnabled;
         _autoCounter = autoCounter;
         _e2eCrc = e2eCrc;
+        _isExtended = isExtended || IdImpliesExtended(id);
     }
 
-    public string Id { get; }
     public string Name { get; }
-    public string Period { get; }
     public string Dlc { get; }
 
     /// <summary>The DBC message this job was created from, if any. Null for freeform hex-only jobs.</summary>
@@ -551,9 +578,38 @@ public sealed partial class TxJobRow : ObservableObject
     /// physical value change, so <see cref="OnPayloadChanged"/> does not redundantly decode it back.</summary>
     internal bool IsSyncingFromSignalEdit { get; set; }
 
+    [ObservableProperty] private string _id;
     [ObservableProperty] private string _payload;
+    [ObservableProperty] private string _period;
     [ObservableProperty] private bool _isEnabled;
     [ObservableProperty] private bool _isTriggered;
+
+    /// <summary>29-bit extended CAN ID vs. the default 11-bit standard ID. Must be set correctly for
+    /// <see cref="Id"/> to go out on the wire as intended — the HAL layer trusts this flag rather
+    /// than inferring frame type from the ID's numeric value. Auto-promoted to true whenever
+    /// <see cref="Id"/> is edited to a value above the 11-bit range (see <see cref="OnIdChanged"/>);
+    /// never auto-demoted back to false, since a small numeric id sent as extended is unusual but
+    /// legal, and could be a deliberate choice.</summary>
+    [ObservableProperty] private bool _isExtended;
+
+    partial void OnIdChanged(string value)
+    {
+        if (IdImpliesExtended(value))
+        {
+            IsExtended = true;
+        }
+    }
+
+    private static bool IdImpliesExtended(string id)
+    {
+        var trimmed = id.Trim();
+        var hexText = trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? trimmed[2..] : trimmed;
+        return uint.TryParse(hexText, System.Globalization.NumberStyles.HexNumber, null, out var value) && value > 0x7FF;
+    }
+
+    /// <summary>Whether this job's per-signal value editor is expanded in the Transmit list.
+    /// Purely a view-state toggle; defaults to expanded so existing behavior is unchanged.</summary>
+    [ObservableProperty] private bool _isSignalsExpanded = true;
     [ObservableProperty] private bool _autoCounter;
     [ObservableProperty] private bool _e2eCrc;
     [ObservableProperty] private string _triggerId = "0x7E0";
