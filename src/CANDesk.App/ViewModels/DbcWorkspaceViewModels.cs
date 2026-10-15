@@ -167,7 +167,7 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "CANDesk XML database (*.xml)|*.xml",
+            Filter = "XML database (*.xml)|*.xml",
             Title = "Open Message Database"
         };
         if (dialog.ShowDialog() != true) return;

@@ -26,6 +26,9 @@ public sealed class CandeskXmlParser : IMessageDatabaseParser
     {
         var document = await XDocument.LoadAsync(input, LoadOptions.None, cancellationToken).ConfigureAwait(false);
         var root = document.Root ?? throw new FormatException("Missing <candesk> root element.");
+        var legacy = root.Name == "DBCData";
+        if (!legacy && root.Name != "candesk")
+            throw new FormatException("Expected <candesk> or <DBCData> root element.");
 
         var nodes = root.Element("nodes")?.Elements("node")
             .Select(node => new CanNode(Require(node.Attribute("name")?.Value, "node name")))
@@ -33,16 +36,19 @@ public sealed class CandeskXmlParser : IMessageDatabaseParser
 
         var messages = new List<DbcMessage>();
         var assignments = new Dictionary<uint, MessageNodeAssignment>();
-        foreach (var messageElement in root.Elements("message"))
+        foreach (var messageElement in root.Elements(legacy ? "CanFrame" : "message"))
         {
-            var canId = ParseUInt(messageElement.Attribute("id")?.Value);
-            var signals = messageElement.Elements("signal").Select(ParseSignal).ToArray();
+            var rawId = ParseUInt(messageElement.Attribute(legacy ? "bmsid" : "id")?.Value);
+            if (legacy && (rawId & 0x6000_0000u) != 0)
+                throw new FormatException($"Invalid CAN ID: 0x{rawId:X}.");
+            var canId = legacy ? rawId & 0x1FFF_FFFFu : rawId;
+            var signals = messageElement.Elements("signal").Select(signal => ParseSignal(signal, legacy)).ToArray();
             messages.Add(new DbcMessage(
                 canId,
                 Require(messageElement.Attribute("name")?.Value, "message name"),
-                byte.Parse(Require(messageElement.Attribute("dlc")?.Value, "message dlc"), CultureInfo.InvariantCulture),
+                byte.Parse(Require(messageElement.Attribute(legacy ? "DLC" : "dlc")?.Value, "message dlc"), CultureInfo.InvariantCulture),
                 signals,
-                bool.Parse(messageElement.Attribute("extended")?.Value ?? "false")));
+                legacy ? rawId > 0x7FFu : bool.Parse(messageElement.Attribute("extended")?.Value ?? "false")));
 
             var transmitter = messageElement.Attribute("tx")?.Value;
             var receivers = messageElement.Element("rx")?.Elements("node")
@@ -57,19 +63,34 @@ public sealed class CandeskXmlParser : IMessageDatabaseParser
         return new CandeskXmlDocument(new MessageDatabase(messages), nodes, assignments);
     }
 
-    private static DbcSignal ParseSignal(XElement signal) => new(
-        Require(signal.Attribute("name")?.Value, "signal name"),
-        int.Parse(Require(signal.Attribute("startBit")?.Value, "signal startBit"), CultureInfo.InvariantCulture),
-        int.Parse(Require(signal.Attribute("length")?.Value, "signal length"), CultureInfo.InvariantCulture),
-        Enum.Parse<ByteOrder>(signal.Attribute("byteOrder")?.Value ?? nameof(ByteOrder.Intel), true),
-        bool.Parse(signal.Attribute("signed")?.Value ?? "false"),
-        double.Parse(signal.Attribute("factor")?.Value ?? "1", CultureInfo.InvariantCulture),
-        double.Parse(signal.Attribute("offset")?.Value ?? "0", CultureInfo.InvariantCulture),
-        ParseNullableDouble(signal.Attribute("min")?.Value),
-        ParseNullableDouble(signal.Attribute("max")?.Value),
-        signal.Attribute("unit")?.Value,
-        Enum.Parse<MultiplexorRole>(signal.Attribute("muxRole")?.Value ?? nameof(MultiplexorRole.None), true),
-        ParseNullableInt(signal.Attribute("muxValue")?.Value));
+    private static DbcSignal ParseSignal(XElement signal, bool legacy)
+    {
+        var minimum = ParseNullableDouble(signal.Attribute("min")?.Value);
+        var maximum = ParseNullableDouble(signal.Attribute("max")?.Value);
+        // DBCData exports use the same 0/0 sentinel for an unspecified range as DBC.
+        if (legacy && minimum == 0 && maximum == 0) minimum = maximum = null;
+        var signed = legacy
+            ? (signal.Attribute("valuetype")?.Value ?? "Unsigned") switch
+            {
+                "Signed" => true,
+                "Unsigned" => false,
+                var value => throw new FormatException($"Unsupported signal value type: {value}.")
+            }
+            : bool.Parse(signal.Attribute("signed")?.Value ?? "false");
+        return new(
+            Require(signal.Attribute("name")?.Value, "signal name"),
+            int.Parse(Require(signal.Attribute(legacy ? "startbit" : "startBit")?.Value, "signal startBit"), CultureInfo.InvariantCulture),
+            int.Parse(Require(signal.Attribute("length")?.Value, "signal length"), CultureInfo.InvariantCulture),
+            Enum.Parse<ByteOrder>(signal.Attribute(legacy ? "byteorder" : "byteOrder")?.Value ?? nameof(ByteOrder.Intel), true),
+            signed,
+            double.Parse(signal.Attribute("factor")?.Value ?? "1", CultureInfo.InvariantCulture),
+            double.Parse(signal.Attribute("offset")?.Value ?? "0", CultureInfo.InvariantCulture),
+            minimum,
+            maximum,
+            signal.Attribute("unit")?.Value,
+            Enum.Parse<MultiplexorRole>(signal.Attribute("muxRole")?.Value ?? nameof(MultiplexorRole.None), true),
+            ParseNullableInt(signal.Attribute("muxValue")?.Value));
+    }
 
     private static double? ParseNullableDouble(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : double.Parse(value, CultureInfo.InvariantCulture);

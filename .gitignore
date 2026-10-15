@@ -59,3 +59,4 @@ nunit-*.xml
 **/.vs
 **/sample
 **/build
+*.artifacts

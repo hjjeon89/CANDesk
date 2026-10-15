@@ -12,7 +12,7 @@
         <Menu VerticalAlignment="Center">
           <MenuItem Header="_File">
             <MenuItem Header="New Message Database" Command="{Binding NewMessageDatabaseCommand}" />
-            <MenuItem Header="Open DBC Database..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Open CAN Database (DBC/XML)..." Command="{Binding OpenDatabaseCommand}" />
             <MenuItem Header="Open Message Database (.xml)..." Command="{Binding MessageDbEditor.OpenCommand}" />
             <MenuItem Header="Save Message Database..." Command="{Binding MessageDbEditor.SaveCommand}" />
             <MenuItem Header="Export Message Database as DBC..." Command="{Binding MessageDbEditor.ExportDbcCommand}" />
@@ -45,7 +45,7 @@
             <MenuItem Header="Reset Bus" Command="{Binding ResetBusCommand}" />
           </MenuItem>
           <MenuItem Header="_Tools">
-            <MenuItem Header="Load DBC..." Command="{Binding OpenDatabaseCommand}" />
+            <MenuItem Header="Load CAN Database (DBC/XML)..." Command="{Binding OpenDatabaseCommand}" />
             <MenuItem Header="Message DB Editor" Command="{Binding OpenMessageEditorCommand}" />
             <MenuItem Header="Signal Monitor" Command="{Binding OpenSignalMonitorCommand}" />
             <MenuItem Header="Settings" />

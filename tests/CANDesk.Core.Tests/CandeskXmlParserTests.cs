@@ -1,3 +1,5 @@
+using System.Text;
+using CANDesk.Core.Dispatch;
 using CANDesk.Core.MessageDb;
 using Xunit;
 
@@ -5,6 +7,84 @@ namespace CANDesk.Core.Tests;
 
 public sealed class CandeskXmlParserTests
 {
+    [Theory]
+    [InlineData("aa.xml", 1, 4)]
+    [InlineData("LifeCycle_rev0p3_CAN_DB - 배포_full.xml", 20, 90)]
+    [InlineData("VolvoCan_4.xml", 18, 163)]
+    public async Task ParseAsync_LoadsSampleDatabases(string filename, int messageCount, int signalCount)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "sample")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        await using var input = File.OpenRead(Path.Combine(directory.FullName, "sample", filename));
+
+        var database = await new CandeskXmlParser().ParseAsync(input);
+
+        Assert.Equal(messageCount, database.Messages.Count);
+        Assert.Equal(signalCount, database.Messages.Sum(message => message.Signals.Count));
+        Assert.All(database.Messages, message =>
+        {
+            Assert.InRange(message.CanId, 0u, 0x1FFF_FFFFu);
+            Assert.True(message.IsExtended);
+        });
+        if (filename.StartsWith("LifeCycle", StringComparison.Ordinal))
+        {
+            Assert.True(database.TryGetMessage(0x1F010002, out var message));
+            var current = Assert.Single(message.Signals, signal => signal.Name == "Pack_A");
+            Assert.True(current.IsSigned);
+            Assert.Equal(0.1, current.Factor);
+            Assert.Equal(-200, current.Minimum);
+            Assert.Equal(200, current.Maximum);
+            Assert.Equal(-1, SignalDecoder.DecodeValue(new byte[] { 0, 0, 0, 0, 0, 0, 0xF6, 0xFF }, current));
+            Assert.True(database.TryGetMessage(0x1F010005, out var temperature));
+            Assert.Equal("℃", temperature.Signals[0].Unit);
+        }
+    }
+
+    [Theory]
+    [InlineData("0x123", 0x123u, false)]
+    [InlineData("291", 0x123u, false)]
+    [InlineData("0x80000123", 0x123u, true)]
+    [InlineData("0x1F020000", 0x1F020000u, true)]
+    public async Task ParseDocumentAsync_ReadsDbcDataIdsAndSignalAttributes(string id, uint expectedId, bool extended)
+    {
+        var xml = $"""
+            <DBCData>
+              <CanFrame bmsid="{id}" name="Status" DLC="8">
+                <signal name="Temperature" startbit="7" length="16" byteorder="Motorola"
+                        valuetype="Signed" factor="0.1" offset="-40" min="-50" max="150" unit="C" />
+                <signal name="Counter" startbit="16" length="8" min="0" max="0" />
+              </CanFrame>
+              <sequence><CanFrame bmsid="{id}" name="Repeated" DLC="8" /></sequence>
+            </DBCData>
+            """;
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        var document = await new CandeskXmlParser().ParseDocumentAsync(input);
+
+        var message = Assert.Single(document.Database.Messages);
+        Assert.Equal(expectedId, message.CanId);
+        Assert.Equal(extended, message.IsExtended);
+        Assert.Equal((byte)8, message.Dlc);
+        Assert.Equal(new DbcSignal("Temperature", 7, 16, ByteOrder.Motorola, true, 0.1, -40, -50, 150, "C"), message.Signals[0]);
+        Assert.Equal(new DbcSignal("Counter", 16, 8, ByteOrder.Intel, false), message.Signals[1]);
+        Assert.Empty(document.Nodes);
+        Assert.Empty(document.Assignments);
+    }
+
+    [Theory]
+    [InlineData("<unrelated />")]
+    [InlineData("<DBCData><CanFrame bmsid='0x60000123' name='Bad' DLC='8' /></DBCData>")]
+    [InlineData("<DBCData><CanFrame name='Bad' DLC='8' /></DBCData>")]
+    [InlineData("<DBCData><CanFrame bmsid='0x123' name='Bad' DLC='8'><signal name='Bad' startbit='0' length='8' valuetype='Float' /></CanFrame></DBCData>")]
+    public async Task ParseAsync_RejectsUnsupportedOrIncompleteXml(string xml)
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        await Assert.ThrowsAsync<FormatException>(() => new CandeskXmlParser().ParseAsync(input));
+    }
+
     [Fact]
     public async Task WriteThenParseDocument_RoundTripsMessagesSignalsNodesAndAssignments()
     {
