@@ -2,7 +2,7 @@ namespace CANDesk.Core.MessageDb;
 
 public enum ByteOrder { Intel, Motorola }
 public enum MultiplexorRole { None, Switch, Value }
-public enum MessageDbFormat { Dbc, CandeskXml, CustomerCsv }
+public enum MessageDbFormat { Dbc, CandeskXml, CustomerCsv, BevCan }
 
 public sealed record DbcSignal(string Name, int StartBit, int BitLength, ByteOrder ByteOrder, bool IsSigned,
     double Factor = 1, double Offset = 0, double? Minimum = null, double? Maximum = null, string? Unit = null,

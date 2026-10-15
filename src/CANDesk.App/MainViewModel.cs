@@ -222,7 +222,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "CAN database (*.dbc;*.xml)|*.dbc;*.xml|DBC database (*.dbc)|*.dbc|XML database (*.xml)|*.xml",
+            Filter = "CAN database (*.dbc;*.xml;*.bevcan)|*.dbc;*.xml;*.bevcan|DBC database (*.dbc)|*.dbc|XML database (*.xml)|*.xml|BEVCAN database (*.bevcan)|*.bevcan",
             Title = "Open CAN Database"
         };
         if (dialog.ShowDialog() != true)
@@ -233,9 +233,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             await using var stream = File.OpenRead(dialog.FileName);
-            IMessageDatabaseParser parser = Path.GetExtension(dialog.FileName).Equals(".xml", StringComparison.OrdinalIgnoreCase)
-                ? new CandeskXmlParser()
-                : new DbcParser();
+            IMessageDatabaseParser parser = Path.GetExtension(dialog.FileName).ToLowerInvariant() switch
+            {
+                ".xml" => new CandeskXmlParser(),
+                ".bevcan" => new BevCanParser(),
+                _ => new DbcParser()
+            };
             var database = await parser.ParseAsync(stream);
             DbcSignalTree.Load(database);
             TraceLog.SetDatabase(database);

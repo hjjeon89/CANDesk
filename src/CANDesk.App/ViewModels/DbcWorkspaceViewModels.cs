@@ -167,7 +167,7 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "XML database (*.xml)|*.xml",
+            Filter = "Message database (*.xml;*.bevcan)|*.xml;*.bevcan|XML database (*.xml)|*.xml|BEVCAN database (*.bevcan)|*.bevcan",
             Title = "Open Message Database"
         };
         if (dialog.ShowDialog() != true) return;
@@ -175,7 +175,9 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
         try
         {
             await using var stream = File.OpenRead(dialog.FileName);
-            var document = await new CandeskXmlParser().ParseDocumentAsync(stream);
+            var document = Path.GetExtension(dialog.FileName).Equals(".bevcan", StringComparison.OrdinalIgnoreCase)
+                ? await new BevCanParser().ParseDocumentAsync(stream)
+                : await new CandeskXmlParser().ParseDocumentAsync(stream);
             _database = new EditableMessageDatabase(document.Database, document.Nodes, document.Assignments);
             SyncFromDatabase();
             SaveError = string.Empty;
