@@ -1,5 +1,56 @@
 # CANDesk
 
+### Build files with PowerShell (Windows x64)
+
+Run this command from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+The script automatically installs a missing .NET SDK and publishes a Release build
+with the .NET and WPF runtimes to `build\`. Run `build\CANDesk.App.exe` directly.
+To distribute the app, copy the entire `build` folder; the destination PC does not
+need the source code or a .NET SDK. CAN hardware vendor drivers are still required
+for real hardware. No Start menu shortcut is created. Use `-WhatIf` to preview.
+
+The build-only smoke check reuses the installer checks:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\Install.Tests.ps1 -BuildOnly
+```
+
+### Install with PowerShell (Windows x64)
+
+Run this command from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+If a suitable .NET SDK is missing, the script automatically installs .NET SDK 8 to
+`%LOCALAPPDATA%\Microsoft\dotnet` using Microsoft's official
+[dotnet-install script](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-install-script).
+An existing .NET SDK 8 or newer is reused. A separate .NET Framework installation is
+not required. The script restores NuGet dependencies, publishes a Release build with
+the .NET runtime included, installs it to
+`%LOCALAPPDATA%\Programs\CANDesk`, and creates a **CANDesk** Start menu shortcut.
+Administrator rights are not required for the default installation. Internet access is
+needed to download a missing SDK and restore NuGet packages and runtime packs that
+are not already cached. The SDK installation does not change the permanent PATH.
+Close CANDesk and run the same command to update it. A failed publish leaves the
+existing installation untouched. User settings in `%APPDATA%\CANDesk` are preserved.
+
+Use `-InstallDirectory 'D:\Apps\CANDesk'` to change the destination, or `-WhatIf` to
+preview the action. CAN hardware vendor drivers must be installed separately;
+see [vendor runtime notes](src/CANDesk.App/vendor/README.md) for optional DLLs.
+
+The installer smoke check runs without building the app or changing the Start menu:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\Install.Tests.ps1
+```
+
 **CANDesk** is an all-in-one, modular CAN bus workstation engineered for seamless testing, diagnostics, and packet manipulation across diverse hardware platforms.
 
 Eliminate vendor lock-in with a unified interface: CANDesk integrates multi-vendor hardware abstraction, multi-format CAN message database support (DBC / custom XML / customer CSV), an in-app message database editor, and highly customizable transmission/reception workflows into a single workbench.
