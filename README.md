@@ -9,10 +9,14 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 The script automatically installs a missing .NET SDK and publishes a Release build
-with the .NET and WPF runtimes to `build\`. Run `build\CANDesk.App.exe` directly.
-To distribute the app, copy the entire `build` folder; the destination PC does not
+with the .NET and WPF runtimes to `build\Release\`. Run `build\Release\CANDesk.App.exe` directly.
+To distribute the app, copy the entire `build\Release` folder; the destination PC does not
 need the source code or a .NET SDK. CAN hardware vendor drivers are still required
 for real hardware. No Start menu shortcut is created. Use `-WhatIf` to preview.
+
+For Explorer/double-click use, run **build.cmd** instead. It runs PowerShell with
+the process execution policy set to Bypass and waits for a key before closing.
+Keep `build.ps1`, `install.ps1`, and the complete `src` tree together.
 
 The build-only smoke check reuses the installer checks:
 
@@ -44,6 +48,27 @@ existing installation untouched. User settings in `%APPDATA%\CANDesk` are preser
 Use `-InstallDirectory 'D:\Apps\CANDesk'` to change the destination, or `-WhatIf` to
 preview the action. CAN hardware vendor drivers must be installed separately;
 see [vendor runtime notes](src/CANDesk.App/vendor/README.md) for optional DLLs.
+
+For Explorer/double-click use, run **install.cmd** to keep the result visible.
+Both scripts save a transcript to `%TEMP%\CANDesk-install-<id>.log` and print its
+path. A failure includes the failing step; temporary build files are removed,
+but the log remains. PowerShell execution blocked before the script starts cannot
+create a log. Domain execution policies can still override the launcher's Bypass.
+
+Common causes on a PC without development tools:
+
+- An incomplete download or running from inside a ZIP: extract the entire repository first.
+- Blocked HTTPS, proxy authentication, or untrusted certificates: allow access to
+  `dot.net`, `aka.ms`, `builds.dotnet.microsoft.com`, and `api.nuget.org`, including
+  their download/CDN redirects. The bootstrap download has a timeout and a second
+  Microsoft endpoint; SDK installation allows the official fallback when `aka.ms` fails.
+- An old or damaged .NET host on PATH: unusable hosts are skipped and a local .NET 8 SDK is installed.
+- A running CANDesk, a read-only checkout/destination, or insufficient disk space:
+  close the app and use a writable folder with room for the SDK, packages, and runtime files.
+
+Visual Studio is not required. Both commands build from source and need Internet
+access on their first run. To avoid SDK installation and build downloads on another
+PC, distribute the complete prebuilt `build\Release` folder instead.
 
 The installer smoke check runs without building the app or changing the Start menu:
 
