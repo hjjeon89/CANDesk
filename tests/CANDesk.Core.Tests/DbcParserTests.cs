@@ -1,5 +1,6 @@
 using System.Text;
 using CANDesk.Core.MessageDb;
+using CANDesk.Hal;
 using Xunit;
 
 namespace CANDesk.Core.Tests;
@@ -20,6 +21,7 @@ public sealed class DbcParserTests
 
         var database = await parser.ParseAsync(input);
 
+        Assert.Null(database.BusConfiguration);
         var message = Assert.Single(database.Messages);
         Assert.Equal(0x100u, message.CanId);
         Assert.Equal("EngineStatus", message.Name);
@@ -33,6 +35,32 @@ public sealed class DbcParserTests
                 Assert.Equal(2, signal.MultiplexValue);
                 Assert.Equal("rpm", signal.Unit);
             });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ParseAsync_ReadsBusAttributesAndDefaults(bool defaultsOnly)
+    {
+        var dbc = """
+            BA_DEF_DEF_ "Baudrate" 250000;
+            BA_DEF_DEF_ "BusType" "CAN";
+            BA_ "Baudrate" BO_ 291 125000;
+            """;
+        if (!defaultsOnly) dbc += "\n" + """
+            BA_ "Baudrate" 500000;
+            BA_ "BusType" "CAN FD";
+            BA_ "DataBitrate" 1000000;
+            BA_ "NominalSamplePoint" 80;
+            BA_ "DataSamplePoint" 75;
+            BA_DEF_DEF_ "Baudrate" 250000;
+            """;
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(dbc));
+        var database = await new DbcParser().ParseAsync(input);
+        var bus = Assert.IsType<CanBusConfig>(database.BusConfiguration);
+        Assert.Equal(defaultsOnly ? CanBusMode.Classic : CanBusMode.Fd, bus.Mode);
+        Assert.Equal(new BitTimingSetting(defaultsOnly ? 250 : 500, defaultsOnly ? 87.5 : 80), bus.Nominal);
+        Assert.Equal(defaultsOnly ? null : new BitTimingSetting(1000, 75), bus.Data);
     }
 
     [Fact]

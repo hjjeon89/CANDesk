@@ -67,6 +67,7 @@ public sealed class BitTimingTests
         var table = new BitrateTableProvider();
 
         Assert.Contains(table.GetNominalPresets(), setting => setting.BitrateKbps == 500 && setting.SamplePointPercent == 87.5);
+        Assert.Contains(table.GetNominalPresets(), setting => setting.BitrateKbps == 500 && setting.SamplePointPercent == 80);
         Assert.Contains(table.GetFdDataPhasePresets(), setting => setting.BitrateKbps == 8_000);
     }
 }

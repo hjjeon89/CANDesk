@@ -5,8 +5,8 @@ using CANDesk.Hal;
 namespace CANDesk.Hal.Peak;
 
 /// <summary>
-/// <see cref="ICanDevice"/> adapter over a PEAK PCAN-USB channel via PCAN-Basic. Classic CAN only
-/// (see <see cref="PCanBasicNative"/> remarks); polls <c>CAN_Read</c> on a background loop rather
+/// <see cref="ICanDevice"/> adapter over a PEAK PCAN-USB channel via PCAN-Basic.
+/// Polls <c>CAN_Read</c>/<c>CAN_ReadFD</c> on a background loop rather
 /// than using PCAN-Basic's Windows-event notification (<c>PCAN_RECEIVE_EVENT</c>), which is a
 /// reasonable v1 trade-off — lower throughput ceiling, no dependency on wrapping a native event
 /// handle — and a documented follow-up if latency/CPU under load turns out to matter.
@@ -25,6 +25,8 @@ internal sealed class PeakCanDevice : ICanDevice
     private Task? _statusLoop;
     private long _dropped;
     private int _disposeState;
+    private bool _isCanFd;
+    private string _timingDescription = string.Empty;
     // TPCANTimestamp is a millisecond counter that (per PCAN-Basic's documented behavior) restarts
     // near zero at CAN_Initialize, not a wall-clock time — anchoring it to the wall clock at Open
     // gives each frame a real SystemTime instead of the dequeue-time DateTime.UtcNow this replaced,
@@ -55,23 +57,25 @@ internal sealed class PeakCanDevice : ICanDevice
         }
 
         config.Validate();
-        if (config.Mode == CanBusMode.Fd)
-        {
-            throw new NotSupportedException("PEAK CAN-FD support is not implemented yet (Classic CAN only in this release).");
-        }
-
-        var btr0Btr1 = config.NominalTiming.InputMode == BitTimingInputMode.RawSegments
+        var fdBitrate = config.IsCanFd ? PeakBitTiming.ToFdString(config) : null;
+        var btr0Btr1 = config.IsCanFd ? (ushort)0 : config.NominalTiming.InputMode == BitTimingInputMode.RawSegments
             ? PeakBitTiming.FromRawSegments(config.NominalTiming.RawSegments!)
             : PeakBitTiming.FromPreset(config.NominalTiming.Preset!);
 
         SetStatus(CanDeviceStatus.Opening);
-        var result = PCanBasicNative.Initialize(_channel, btr0Btr1, hwType: 0, ioPort: 0, interrupt: 0);
+        var result = config.IsCanFd
+            ? PCanBasicNative.InitializeFd(_channel, fdBitrate!)
+            : PCanBasicNative.Initialize(_channel, btr0Btr1, hwType: 0, ioPort: 0, interrupt: 0);
         if (result != PCanBasicNative.StatusOk)
         {
             SetStatus(CanDeviceStatus.Faulted);
-            throw new InvalidOperationException($"CAN_Initialize failed for channel 0x{_channel:X}: PCAN status 0x{result:X}.");
+            throw new InvalidOperationException($"{(config.IsCanFd ? "CAN_InitializeFD" : "CAN_Initialize")} failed for channel 0x{_channel:X}: PCAN status 0x{result:X}.");
         }
 
+        _isCanFd = config.IsCanFd;
+        _timingDescription = config.IsCanFd
+            ? ReadFdTimingDescription(_channel, fdBitrate!)
+            : $"Classic timing: BTR0BTR1=0x{btr0Btr1:X4}";
         _timeBaseUtc = DateTime.UtcNow;
         var sessionCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, cancellationToken);
         _sessionCancellation = sessionCancellation;
@@ -108,6 +112,17 @@ internal sealed class PeakCanDevice : ICanDevice
     public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default)
     {
         EnsureOpen();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_isCanFd)
+        {
+            var fdMessage = ToFdMessage(frame);
+            var fdResult = PCanBasicNative.WriteFd(_channel, ref fdMessage);
+            if (fdResult != PCanBasicNative.StatusOk)
+                throw new InvalidOperationException($"CAN_WriteFD failed for channel 0x{_channel:X}: PCAN status 0x{fdResult:X}.");
+            return ValueTask.CompletedTask;
+        }
+        if (frame.PayloadLength > 8 || (frame.Flags & (CanFrameFlags.Fd | CanFrameFlags.BitRateSwitch)) != 0)
+            throw new InvalidOperationException("CAN FD frames require a channel opened in CAN FD mode.");
 
         var message = new PCanBasicNative.TPCANMsg
         {
@@ -162,7 +177,13 @@ internal sealed class PeakCanDevice : ICanDevice
         {
             while (!ct.IsCancellationRequested)
             {
-                var result = PCanBasicNative.Read(_channel, out var message, out var timestamp);
+                PCanBasicNative.TPCANMsg message = default;
+                PCanBasicNative.TPCANTimestamp timestamp = default;
+                PCanBasicNative.TPCANMsgFD fdMessage = default;
+                ulong timestampUs = 0;
+                var result = _isCanFd
+                    ? PCanBasicNative.ReadFd(_channel, out fdMessage, out timestampUs)
+                    : PCanBasicNative.Read(_channel, out message, out timestamp);
                 if (result == PCanBasicNative.StatusQueueReceiveEmpty)
                 {
                     await Task.Delay(PollInterval, ct).ConfigureAwait(false);
@@ -171,19 +192,27 @@ internal sealed class PeakCanDevice : ICanDevice
 
                 if (result != PCanBasicNative.StatusOk)
                 {
-                    ErrorOccurred?.Invoke(this, new(ClassifyError(result), $"CAN_Read returned PCAN status 0x{result:X}."));
+                    ErrorOccurred?.Invoke(this, new(ClassifyError(result), $"{(_isCanFd ? "CAN_ReadFD" : "CAN_Read")} returned PCAN status 0x{result:X}."));
                     await Task.Delay(PollInterval, ct).ConfigureAwait(false);
                     continue;
                 }
 
                 // PCAN_MESSAGE_STATUS frames carry bus-state info rather than payload data; skip them here,
                 // the status loop already surfaces bus condition changes.
-                if ((message.MsgType & PCanBasicNative.MessageStatus) != 0)
+                var messageType = _isCanFd ? fdMessage.MsgType : message.MsgType;
+                if ((messageType & PCanBasicNative.MessageStatus) != 0)
                 {
                     continue;
                 }
 
-                _frames.Writer.TryWrite(ToCanFrame(message, _timeBaseUtc, timestamp));
+                if (_isCanFd && fdMessage.Dlc > 15)
+                {
+                    ErrorOccurred?.Invoke(this, new(CanErrorKind.Driver, $"CAN_ReadFD returned an invalid DLC: {fdMessage.Dlc}."));
+                    continue;
+                }
+                _frames.Writer.TryWrite(_isCanFd
+                    ? ToCanFrame(fdMessage, _timeBaseUtc, timestampUs)
+                    : ToCanFrame(message, _timeBaseUtc, timestamp));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -209,7 +238,7 @@ internal sealed class PeakCanDevice : ICanDevice
                     SetStatus(CanDeviceStatus.BusOff);
                 }
 
-                ErrorOccurred?.Invoke(this, new(ClassifyError(status), $"CAN_GetStatus returned PCAN status 0x{status:X}."));
+                ErrorOccurred?.Invoke(this, new(ClassifyError(status), $"CAN_GetStatus returned PCAN status 0x{status:X} on {ChannelName}. {_timingDescription}."));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -246,6 +275,63 @@ internal sealed class PeakCanDevice : ICanDevice
         var systemTime = timeBaseUtc.AddMilliseconds(elapsedMs).AddTicks(timestamp.Micros * 10L);
 
         return CanFrame.Create(message.Id, payload, flags, systemTime: systemTime);
+    }
+
+    internal static unsafe PCanBasicNative.TPCANMsgFD ToFdMessage(in CanFrame frame)
+    {
+        var fd = frame.Flags.HasFlag(CanFrameFlags.Fd);
+        var rtr = frame.Flags.HasFlag(CanFrameFlags.RemoteTransmissionRequest);
+        var brs = frame.Flags.HasFlag(CanFrameFlags.BitRateSwitch);
+        if (frame.PayloadLength > 64 || (!fd && frame.PayloadLength > 8) || (fd && rtr) || (brs && !fd))
+            throw new ArgumentException("Invalid CAN FD payload length or frame flags.", nameof(frame));
+        if (frame.Id > (frame.Flags.HasFlag(CanFrameFlags.Extended) ? 0x1FFF_FFFFu : 0x7FFu))
+            throw new ArgumentException("CAN ID exceeds the selected frame format.", nameof(frame));
+
+        var message = new PCanBasicNative.TPCANMsgFD
+        {
+            Id = frame.Id,
+            MsgType = (byte)((frame.Flags.HasFlag(CanFrameFlags.Extended) ? PCanBasicNative.MessageExtended : 0)
+                | (rtr ? PCanBasicNative.MessageRtr : 0)
+                | (fd ? PCanBasicNative.MessageFd : 0)
+                | (brs ? PCanBasicNative.MessageBitRateSwitch : 0)),
+            Dlc = CanFrame.GetDlc(frame.PayloadLength)
+        };
+        var payload = frame.PayloadSpan;
+        for (var index = 0; index < payload.Length; index++) message.Data[index] = payload[index];
+        return message;
+    }
+
+    internal static unsafe CanFrame ToCanFrame(in PCanBasicNative.TPCANMsgFD message, DateTime timeBaseUtc, ulong timestampUs)
+    {
+        if (message.Dlc > 15) throw new ArgumentOutOfRangeException(nameof(message), "PCAN DLC must be 0-15.");
+        var flags = CanFrameFlags.None;
+        if ((message.MsgType & PCanBasicNative.MessageExtended) != 0) flags |= CanFrameFlags.Extended;
+        if ((message.MsgType & PCanBasicNative.MessageRtr) != 0) flags |= CanFrameFlags.RemoteTransmissionRequest;
+        if ((message.MsgType & PCanBasicNative.MessageErrorFrame) != 0) flags |= CanFrameFlags.ErrorFrame;
+        if ((message.MsgType & PCanBasicNative.MessageFd) != 0) flags |= CanFrameFlags.Fd;
+        if ((message.MsgType & PCanBasicNative.MessageBitRateSwitch) != 0) flags |= CanFrameFlags.BitRateSwitch;
+        var length = flags.HasFlag(CanFrameFlags.Fd)
+            ? message.Dlc switch { <= 8 => message.Dlc, 9 => 12, 10 => 16, 11 => 20, 12 => 24, 13 => 32, 14 => 48, _ => 64 }
+            : Math.Min(message.Dlc, (byte)8);
+        Span<byte> payload = stackalloc byte[length];
+        for (var index = 0; index < length; index++) payload[index] = message.Data[index];
+        return CanFrame.Create(message.Id, payload, flags, timestampUs,
+            timeBaseUtc.AddTicks(checked((long)timestampUs * 10)));
+    }
+
+    private static unsafe string ReadFdTimingDescription(ushort channel, string requested)
+    {
+        Span<byte> buffer = stackalloc byte[512];
+        buffer.Clear();
+        fixed (byte* value = buffer)
+        {
+            var result = PCanBasicNative.GetValueBytes(channel, PCanBasicNative.BitrateInfoFd, value, (uint)buffer.Length);
+            if (result != PCanBasicNative.StatusOk)
+                return $"FD timing (requested): {requested}; readback status=0x{result:X}";
+        }
+        var terminator = buffer.IndexOf((byte)0);
+        var timing = System.Text.Encoding.ASCII.GetString(terminator < 0 ? buffer : buffer[..terminator]);
+        return $"FD timing (driver): {timing}";
     }
 
     private void EnsureOpen()

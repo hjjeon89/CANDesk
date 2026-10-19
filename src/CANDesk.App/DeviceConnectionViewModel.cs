@@ -16,6 +16,10 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     public IReadOnlyList<string> Channels { get; } = ["Channel 1", "Channel 2"];
     public IReadOnlyList<BitTimingSetting> NominalPresets { get; }
     public IReadOnlyList<BitTimingSetting> DataPresets { get; }
+    public IReadOnlyList<int> ControllerClocksMHz { get; } = [80, 60, 40, 30, 24, 20];
+    [ObservableProperty] private int _controllerClockMHz = 80;
+    public bool IsPeakFd => SelectedVendor == "PEAK" && IsFdMode;
+    private int TimingClockHz => IsPeakFd ? checked(ControllerClockMHz * 1_000_000) : DefaultControllerClockHz;
 
     [ObservableProperty] private string _selectedVendor = "PEAK";
     [ObservableProperty] private string _selectedChannel = "Channel 1";
@@ -58,11 +62,39 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
         _timingCalculator = timingCalculator;
         NominalPresets = bitrateTable.GetNominalPresets();
         DataPresets = bitrateTable.GetFdDataPhasePresets();
-        _selectedNominalTiming = NominalPresets.Single(timing => timing.BitrateKbps == 500);
+        _selectedNominalTiming = NominalPresets.Single(timing => timing.BitrateKbps == 500 && timing.SamplePointPercent == 87.5);
         _selectedDataTiming = DataPresets.Single(timing => timing.BitrateKbps == 2_000);
         SyncNominalRawFromPreset(_selectedNominalTiming);
         SyncDataRawFromPreset(_selectedDataTiming);
         RefreshRawDescriptions();
+    }
+
+    public void ApplyBusConfiguration(CanBusConfig? configuration)
+    {
+        if (configuration is null) return;
+
+        Mode = configuration.Mode;
+        UseRawNominalTiming = false;
+        UseCustomNominalTiming = false;
+        var nominal = NominalPresets.FirstOrDefault(setting =>
+            setting.BitrateKbps == configuration.Nominal.BitrateKbps
+            && setting.SamplePointPercent == configuration.Nominal.SamplePointPercent);
+        CustomNominalBitrateKbps = configuration.Nominal.BitrateKbps.ToString();
+        CustomNominalSamplePoint = configuration.Nominal.SamplePointPercent.ToString();
+        if (nominal is not null) SelectedNominalTiming = nominal;
+        UseCustomNominalTiming = nominal is null;
+        SyncNominalRawFromCurrentSelection();
+
+        if (configuration.Data is not { } data) return;
+        UseRawDataTiming = false;
+        UseCustomDataTiming = false;
+        var dataPreset = DataPresets.FirstOrDefault(setting =>
+            setting.BitrateKbps == data.BitrateKbps && setting.SamplePointPercent == data.SamplePointPercent);
+        CustomDataBitrateKbps = data.BitrateKbps.ToString();
+        CustomDataSamplePoint = data.SamplePointPercent.ToString();
+        if (dataPreset is not null) SelectedDataTiming = dataPreset;
+        UseCustomDataTiming = dataPreset is null;
+        SyncDataRawFromCurrentSelection();
     }
 
     public CanBusConfig BuildConfiguration()
@@ -87,26 +119,41 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
             : null;
         var nominal = UseRawNominalTiming ? DescribeAsSetting(nominalRaw) : nominalPreset;
         var data = Mode == CanBusMode.Fd ? UseRawDataTiming ? DescribeAsSetting(dataRaw) : dataPreset : null;
-        return new CanBusConfig { Mode = Mode, Nominal = nominal, Data = data, NominalTiming = nominalTiming, DataTiming = dataTiming };
+        return new CanBusConfig { ClockFrequencyHz = TimingClockHz, Mode = Mode, Nominal = nominal, Data = data, NominalTiming = nominalTiming, DataTiming = dataTiming };
     }
 
     partial void OnModeChanged(CanBusMode value)
     {
         OnPropertyChanged(nameof(IsClassicMode));
         OnPropertyChanged(nameof(IsFdMode));
+        OnPropertyChanged(nameof(IsPeakFd));
+        RefreshTimingForClock();
     }
 
-    // Picking a bitrate (preset table or Custom entry) recomputes BRP/TSeg1/TSeg2/SJW so the
-    // Advanced fields always show the register values for whatever is currently selected,
-    // instead of going stale the moment the user touches the combo box.
+    partial void OnSelectedVendorChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsPeakFd));
+        RefreshTimingForClock();
+    }
+
+    partial void OnControllerClockMHzChanged(int value) => RefreshTimingForClock();
+
+    private void RefreshTimingForClock()
+    {
+        if (!UseRawNominalTiming) SyncNominalRawFromCurrentSelection();
+        if (!UseRawDataTiming) SyncDataRawFromCurrentSelection();
+        RefreshRawDescriptions();
+    }
+
+    // Preset/custom edits refresh the preview outside Advanced; manual register values stay authoritative.
     partial void OnSelectedNominalTimingChanged(BitTimingSetting value)
     {
-        if (!UseCustomNominalTiming) SyncNominalRawFromPreset(value);
+        if (!UseCustomNominalTiming && !UseRawNominalTiming) SyncNominalRawFromPreset(value);
     }
 
     partial void OnSelectedDataTimingChanged(BitTimingSetting value)
     {
-        if (!UseCustomDataTiming) SyncDataRawFromPreset(value);
+        if (!UseCustomDataTiming && !UseRawDataTiming) SyncDataRawFromPreset(value);
     }
 
     partial void OnUseCustomNominalTimingChanged(bool value) => SyncNominalRawFromCurrentSelection();
@@ -133,6 +180,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     private void SyncNominalRawFromCurrentSelection()
     {
+        if (UseRawNominalTiming) return;
         var preset = UseCustomNominalTiming
             ? TryParsePreviewSetting(CustomNominalBitrateKbps, CustomNominalSamplePoint)
             : SelectedNominalTiming;
@@ -141,6 +189,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     private void SyncDataRawFromCurrentSelection()
     {
+        if (UseRawDataTiming) return;
         var preset = UseCustomDataTiming
             ? TryParsePreviewSetting(CustomDataBitrateKbps, CustomDataSamplePoint)
             : SelectedDataTiming;
@@ -169,7 +218,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     {
         try
         {
-            segments = _timingCalculator.Calculate(preset, DefaultControllerClockHz);
+            segments = _timingCalculator.Calculate(preset, TimingClockHz);
             return true;
         }
         catch (InvalidOperationException)
@@ -191,7 +240,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     {
         try
         {
-            var value = _timingCalculator.Describe(CreateRawSegments(prescaler, tseg1, tseg2, sjw), DefaultControllerClockHz);
+            var value = _timingCalculator.Describe(CreateRawSegments(prescaler, tseg1, tseg2, sjw), TimingClockHz);
             return $"Effective: {value.BitrateKbps:N0} kbps / {value.SamplePointPercent:0.#}%";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -202,7 +251,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     private BitTimingSetting DescribeAsSetting(RawBitTimingSegments segments)
     {
-        var value = _timingCalculator.Describe(segments, DefaultControllerClockHz);
+        var value = _timingCalculator.Describe(segments, TimingClockHz);
         return new BitTimingSetting(value.BitrateKbps, value.SamplePointPercent, true);
     }
 

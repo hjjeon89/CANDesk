@@ -90,6 +90,7 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
 
     /// <summary>Raised after the available node set changes.</summary>
     public event EventHandler? NodesChanged;
+    public event Action<IMessageDatabase>? DatabaseLoaded;
 
     [ObservableProperty]
     private EditorNodeRow? _selectedNode;
@@ -179,6 +180,7 @@ public sealed partial class MessageDbEditorViewModel : ObservableObject
                 ? await new BevCanParser().ParseDocumentAsync(stream)
                 : await new CandeskXmlParser().ParseDocumentAsync(stream);
             _database = new EditableMessageDatabase(document.Database, document.Nodes, document.Assignments);
+            DatabaseLoaded?.Invoke(document.Database);
             SyncFromDatabase();
             SaveError = string.Empty;
         }
@@ -548,7 +550,9 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
 
     public void SetSendHandler(Func<CanFrame, Task>? sendFrameAsync) => _sendFrameAsync = sendFrameAsync;
 
-    public void SetScheduler(ITxScheduler? scheduler)
+    [ObservableProperty] private bool _useCanFd;
+
+    public void SetScheduler(ITxScheduler? scheduler, bool useCanFd = false)
     {
         foreach (var jobId in _cyclicJobIds.Values)
         {
@@ -561,6 +565,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
         _cyclicJobIds.Clear();
         _triggeredJobIds.Clear();
         _scheduler = scheduler;
+        UseCanFd = useCanFd;
     }
 
     [RelayCommand]
@@ -658,7 +663,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     private const uint StandardIdMax = 0x7FF;
     private const uint ExtendedIdMax = 0x1FFF_FFFF;
 
-    private static CanFrame CreateFrame(TxJobRow job)
+    private CanFrame CreateFrame(TxJobRow job)
     {
         var id = ParseCanId(job.Id);
         if (id > ExtendedIdMax)
@@ -676,7 +681,15 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
         }
 
         var flags = job.IsExtended ? CanFrameFlags.Extended : CanFrameFlags.None;
-        return CanFrame.Create(id, ParsePayload(job.Payload), flags);
+        if (UseCanFd && job.IsFd)
+        {
+            flags |= CanFrameFlags.Fd;
+            if (job.BitRateSwitch) flags |= CanFrameFlags.BitRateSwitch;
+        }
+        var payload = ParsePayload(job.Payload);
+        if (!flags.HasFlag(CanFrameFlags.Fd) && payload.Length > 8)
+            throw new InvalidOperationException("Payloads longer than 8 bytes require FD on a CAN FD connection.");
+        return CanFrame.Create(id, payload, flags);
     }
 
     private static uint ParseCanId(string text)

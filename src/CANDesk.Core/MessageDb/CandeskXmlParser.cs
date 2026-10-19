@@ -60,7 +60,14 @@ public sealed class CandeskXmlParser : IMessageDatabaseParser
             }
         }
 
-        return new CandeskXmlDocument(new MessageDatabase(messages), nodes, assignments);
+        var bus = root.Element(legacy ? "dbcInfomation" : "bus");
+        var busConfiguration = bus is null ? null : MessageDbBusConfiguration.Create(
+            ParseNullableInt(bus.Attribute(legacy ? "baudrate" : "nominalBitrate")?.Value) ?? 0,
+            bus.Attribute(legacy ? "CANTYPE" : "type")?.Value,
+            ParseNullableInt(bus.Attribute(legacy ? "CANFDBitrate" : "dataBitrate")?.Value) ?? 0,
+            ParseNullableDouble(bus.Attribute("nominalSamplePoint")?.Value) ?? 87.5,
+            ParseNullableDouble(bus.Attribute("dataSamplePoint")?.Value) ?? 80);
+        return new CandeskXmlDocument(new MessageDatabase(messages, busConfiguration), nodes, assignments);
     }
 
     private static DbcSignal ParseSignal(XElement signal, bool legacy)
@@ -127,6 +134,12 @@ public sealed class CandeskXmlWriter : IMessageDatabaseWriter
     {
         var root = new XElement("candesk",
             new XAttribute("version", "1"),
+            database.BusConfiguration is not { } bus ? null : new XElement("bus",
+                new XAttribute("type", bus.IsCanFd ? "CAN FD" : "CAN"),
+                new XAttribute("nominalBitrate", bus.Nominal.BitrateKbps * 1000),
+                new XAttribute("nominalSamplePoint", bus.Nominal.SamplePointPercent.ToString(CultureInfo.InvariantCulture)),
+                bus.Data is null ? null : new XAttribute("dataBitrate", bus.Data.BitrateKbps * 1000),
+                bus.Data is null ? null : new XAttribute("dataSamplePoint", bus.Data.SamplePointPercent.ToString(CultureInfo.InvariantCulture))),
             nodes.Count == 0
                 ? null
                 : new XElement("nodes", nodes.Select(node => new XElement("node", new XAttribute("name", node.Name)))),

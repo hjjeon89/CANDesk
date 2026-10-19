@@ -7,6 +7,13 @@
     <ProjectReference Include="..\..\src\CANDesk.Hal.Mock\CANDesk.Hal.Mock.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Exercise the connection settings without loading the WPF application. -->
+    <Compile Include="..\..\src\CANDesk.App\DeviceConnectionViewModel.cs" Link="DeviceConnectionViewModel.cs" />
+    <Compile Include="..\..\src\CANDesk.App\DeviceConnectionService.cs" Link="DeviceConnectionService.cs" />
+    <Compile Include="..\..\src\CANDesk.Hal.Peak\PCanBasicNative.cs" Link="Peak\PCanBasicNative.cs" />
+    <Compile Include="..\..\src\CANDesk.Hal.Peak\PeakChannels.cs" Link="Peak\PeakChannels.cs" />
+    <Compile Include="..\..\src\CANDesk.Hal.Peak\PeakCanDevice.cs" Link="Peak\PeakCanDevice.cs" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">

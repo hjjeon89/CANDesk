@@ -166,7 +166,7 @@ public sealed partial class MessageMonitorRow(uint canId) : ObservableObject
     {
         if (LastReceived != default) CycleTimeMs = (frame.SystemTime - LastReceived).TotalMilliseconds;
         LastReceived = frame.SystemTime;
-        Dlc = frame.Dlc;
+        Dlc = frame.PayloadLength;
         Payload = string.Join(" ", Convert.ToHexString(frame.PayloadSpan).Chunk(2).Select(hex => new string(hex)));
         Direction = direction;
         IsError = frame.Flags.HasFlag(CanFrameFlags.ErrorFrame);

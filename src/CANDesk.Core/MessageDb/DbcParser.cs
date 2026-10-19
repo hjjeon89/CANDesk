@@ -24,11 +24,20 @@ public sealed partial class DbcParser : IMessageDatabaseParser
     public async Task<IMessageDatabase> ParseAsync(Stream input, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input); var messages = new List<DbcMessage>(); PendingMessage? current = null;
+        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using var memory = new MemoryStream();
         await input.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
         using var reader = new StringReader(DecodeText(memory.ToArray()));
         while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
         {
+            var attribute = BusAttributePattern().Match(line);
+            if (attribute.Success)
+            {
+                var target = attribute.Groups["default"].Success ? defaults : attributes;
+                target[attribute.Groups["name"].Value] = attribute.Groups["value"].Value.Trim('"');
+                continue;
+            }
             var messageMatch = MessagePattern().Match(line);
             if (messageMatch.Success)
             {
@@ -41,7 +50,14 @@ public sealed partial class DbcParser : IMessageDatabaseParser
             if (signalMatch.Success && current is not null) current.Signals.Add(ParseSignal(signalMatch));
         }
         if (current is not null && !IsUnassignableMessage(current)) messages.Add(new(current.Id, current.Name, current.Dlc, current.Signals));
-        return new MessageDatabase(messages);
+        string GetAttribute(string name, string fallback) => attributes.GetValueOrDefault(name)
+            ?? defaults.GetValueOrDefault(name) ?? fallback;
+        var busConfiguration = MessageDbBusConfiguration.Create(
+            int.Parse(GetAttribute("Baudrate", "0"), CultureInfo.InvariantCulture), GetAttribute("BusType", "CAN"),
+            int.Parse(GetAttribute("DataBitrate", "0"), CultureInfo.InvariantCulture),
+            double.Parse(GetAttribute("NominalSamplePoint", "87.5"), CultureInfo.InvariantCulture),
+            double.Parse(GetAttribute("DataSamplePoint", "80"), CultureInfo.InvariantCulture));
+        return new MessageDatabase(messages, busConfiguration);
     }
 
     /// <summary>DBC has no mandated text encoding, and real-world exports save unit strings with
@@ -104,6 +120,8 @@ public sealed partial class DbcParser : IMessageDatabaseParser
             double.Parse(match.Groups["factor"].Value, CultureInfo.InvariantCulture), double.Parse(match.Groups["offset"].Value, CultureInfo.InvariantCulture),
             minimum, maximum, match.Groups["unit"].Value, role, muxValue);
     }
+    [GeneratedRegex("""^\s*BA_(?<default>DEF_DEF_)?\s+"(?<name>Baudrate|BusType|DataBitrate|NominalSamplePoint|DataSamplePoint)"\s+(?<value>"[^"]*"|[-+0-9.eE]+)\s*;""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BusAttributePattern();
     [GeneratedRegex("^\\s*BO_\\s+(?<id>\\d+)\\s+(?<name>[^:]+):\\s*(?<dlc>\\d+)", RegexOptions.CultureInvariant)] private static partial Regex MessagePattern();
     [GeneratedRegex("^\\s*SG_\\s+(?<name>\\S+)(?:\\s+(?<mux>M|m\\d+))?\\s*:\\s*(?<start>\\d+)\\|(?<length>\\d+)@(?<order>[01])(?<sign>[+-])\\s*\\((?<factor>[^,]+),(?<offset>[^)]+)\\)\\s*\\[(?<min>[^|]+)\\|(?<max>[^]]+)\\]\\s*\\\"(?<unit>[^\"]*)\\\"", RegexOptions.CultureInvariant)] private static partial Regex SignalPattern();
 }

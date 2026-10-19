@@ -68,7 +68,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // attempts; every other status (including BusOff/Faulted) still allows a fresh Connect to recover.
     public bool CanConnect => Status != "Opening";
     public bool CanDisconnect => Status is "Open" or "BusOff" or "Faulted";
-    public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {Connection.SelectedNominalTiming}" : "Disconnected";
+    public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {_connection.CurrentConfiguration?.Nominal}" : "Disconnected";
     public string BusStatusText => Status switch
     {
         "Open" => "Normal (OK)",
@@ -108,6 +108,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             () => MessageDbEditor.Nodes.Select(node => node.Name).ToArray(),
             nodeName => MessageDbEditor.GetTransmitMessages(nodeName));
         MessageDbEditor.NodesChanged += (_, _) => TransmitPanel.RefreshEmulatedNodes();
+        MessageDbEditor.DatabaseLoaded += database => Connection.ApplyBusConfiguration(database.BusConfiguration);
         _rateTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _rateTimer.Tick += (_, _) => UpdateRates();
         _rateTimer.Start();
@@ -177,7 +178,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 }
             });
         };
-        TransmitPanel.SetScheduler(txScheduler);
+        TransmitPanel.SetScheduler(txScheduler, _connection.CurrentConfiguration?.IsCanFd == true);
         TransmitPanel.SetSendHandler(frame => txScheduler.SendOnceAsync(frame).AsTask());
         Status = device.Status.ToString(); OnPropertyChanged(nameof(DeviceStatusText));
         await _dispatcher.StartAsync(device.ReadFramesAsync(cancellationToken), cancellationToken);
@@ -240,6 +241,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 _ => new DbcParser()
             };
             var database = await parser.ParseAsync(stream);
+            Connection.ApplyBusConfiguration(database.BusConfiguration);
             DbcSignalTree.Load(database);
             TraceLog.SetDatabase(database);
             Monitor.SetDatabase(database);
@@ -478,7 +480,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         TxRate = Interlocked.Exchange(ref _txFrameCount, 0).ToString();
 
         var bits = Interlocked.Exchange(ref _busBitsAccumulated, 0);
-        var bitrateKbps = Connection.SelectedNominalTiming.BitrateKbps;
+        var bitrateKbps = _connection.CurrentConfiguration?.Nominal.BitrateKbps ?? Connection.SelectedNominalTiming.BitrateKbps;
         BusLoadPercent = bitrateKbps > 0 ? Math.Min(100.0, bits / (bitrateKbps * 1000.0) * 100.0) : 0.0;
         OnPropertyChanged(nameof(DroppedFrameCount));
         OnPropertyChanged(nameof(DroppedFrameBrush));
@@ -597,6 +599,8 @@ public sealed partial class TxJobRow : ObservableObject
     /// never auto-demoted back to false, since a small numeric id sent as extended is unusual but
     /// legal, and could be a deliberate choice.</summary>
     [ObservableProperty] private bool _isExtended;
+    [ObservableProperty] private bool _isFd = true;
+    [ObservableProperty] private bool _bitRateSwitch = true;
 
     partial void OnIdChanged(string value)
     {

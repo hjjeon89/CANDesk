@@ -25,21 +25,23 @@ public sealed class BevCanParser : IMessageDatabaseParser
             throw new InvalidDataException($"Unsupported BEVCAN schema version: {version}.");
 
         reader.ReadInt64(); // Creation time.
-        for (var index = 0; index < 4; index++) reader.ReadString(); // Source path/hash, version, bus type.
-        reader.ReadInt32(); // Baud rate.
-        // shortcut: bus timing is not part of the message model; import it when hardware setup is requested.
+        for (var index = 0; index < 3; index++) reader.ReadString(); // Source path/hash, version.
+        var busType = reader.ReadString();
+        var baudrate = reader.ReadInt32();
+        var busConfiguration = MessageDbBusConfiguration.Create(baudrate, busType);
         if (version >= 3)
         {
-            reader.ReadByte();
-            reader.ReadString();
-            for (var index = 0; index < 2; index++)
+            var protocol = reader.ReadByte() switch
             {
-                reader.ReadInt32();
-                reader.ReadDouble();
-                reader.ReadInt32();
-                reader.ReadInt32();
-                reader.ReadInt32();
-            }
+                0 => "CAN",
+                1 => "CAN FD",
+                var value => throw new InvalidDataException($"Invalid BEVCAN bus protocol: {value}.")
+            };
+            reader.ReadString(); // Preset name.
+            var nominal = ReadTiming(reader);
+            var data = ReadTiming(reader);
+            busConfiguration = MessageDbBusConfiguration.Create(nominal.Bitrate, protocol,
+                protocol == "CAN FD" ? data.Bitrate : 0, nominal.SamplePoint, data.SamplePoint);
         }
 
         var nodes = new List<CanNode>();
@@ -117,7 +119,18 @@ public sealed class BevCanParser : IMessageDatabaseParser
         }
         if (buffer.Position != buffer.Length)
             throw new InvalidDataException("Unexpected trailing BEVCAN data.");
-        return new CandeskXmlDocument(new MessageDatabase(messages), nodes, assignments);
+        return new CandeskXmlDocument(new MessageDatabase(messages, busConfiguration), nodes, assignments);
+    }
+
+    private static (int Bitrate, double SamplePoint) ReadTiming(BinaryReader reader)
+    {
+        var bitrate = reader.ReadInt32();
+        var samplePoint = reader.ReadDouble();
+        // BEVCAN has no controller clock/BRP, so hardware timing is calculated from bitrate/SP.
+        reader.ReadInt32(); // SJW.
+        reader.ReadInt32(); // TSEG1.
+        reader.ReadInt32(); // TSEG2.
+        return (bitrate, samplePoint);
     }
 
     private static DbcSignal ReadSignal(BinaryReader reader, byte dlc, HashSet<string> receivers)

@@ -46,7 +46,7 @@ public sealed class EditableMessageDatabase(IMessageDatabase initial) : IEditabl
             _nodeAssignments[canId] = assignment with { ReceiverNodes = assignment.ReceiverNodes.ToHashSet(StringComparer.Ordinal) };
         }
     }
-    public IMessageDatabase Snapshot => new MessageDatabase(_messages.Values);
+    public IMessageDatabase Snapshot => new MessageDatabase(_messages.Values, initial.BusConfiguration);
     public bool IsDirty { get; private set; }
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;

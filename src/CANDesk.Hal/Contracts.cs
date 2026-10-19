@@ -59,6 +59,7 @@ public sealed record BitTimingConfig
 /// </summary>
 public sealed record CanBusConfig
 {
+    public int ClockFrequencyHz { get; init; } = 80_000_000;
     public CanBusMode Mode { get; init; } = CanBusMode.Classic;
     public BitTimingSetting Nominal { get; init; } = new(500, 87.5);
     public BitTimingSetting? Data { get; init; }
@@ -82,6 +83,7 @@ public sealed record CanBusConfig
     /// <summary>Reject incomplete or contradictory bus timing before a vendor driver opens a channel.</summary>
     public void Validate()
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ClockFrequencyHz);
         ValidateTiming(Nominal, nameof(Nominal));
         if (Mode == CanBusMode.Fd && Data is null)
             throw new InvalidOperationException("CAN-FD requires a data phase bit timing setting.");
@@ -168,7 +170,7 @@ public sealed class BitrateTableProvider : IBitrateTableProvider
 {
     private readonly List<BitTimingSetting> _custom = [];
     private static readonly IReadOnlyList<BitTimingSetting> NominalPresets =
-        [new(10, 75), new(20, 80), new(50, 80), new(100, 80), new(125, 87.5), new(250, 87.5), new(500, 87.5), new(800, 80), new(1_000, 75)];
+        [new(10, 75), new(20, 80), new(50, 80), new(100, 80), new(125, 87.5), new(250, 87.5), new(500, 87.5), new(500, 80), new(800, 80), new(1_000, 75)];
     private static readonly IReadOnlyList<BitTimingSetting> DataPresets =
         [new(500, 80), new(1_000, 80), new(2_000, 80), new(4_000, 80), new(5_000, 75), new(8_000, 70)];
     public IReadOnlyList<BitTimingSetting> GetNominalPresets() => [.. NominalPresets, .. _custom];

@@ -27,6 +27,11 @@
               <ToggleButton Content="CAN FD" IsChecked="{Binding IsFdMode, Mode=TwoWay}" BorderThickness="0" Background="Transparent" Margin="2,0,0,0" />
             </StackPanel>
           </Border>
+          <StackPanel Orientation="Horizontal" Margin="10,0,0,0" Visibility="{Binding IsPeakFd, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <TextBlock Text="CLOCK" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox Width="55" ItemsSource="{Binding ControllerClocksMHz}" SelectedItem="{Binding ControllerClockMHz}" VerticalAlignment="Center" ToolTip="Match the PCAN-View clock used with these BRP/TSEG values" />
+            <TextBlock Text="MHz" VerticalAlignment="Center" Margin="4,0,0,0" />
+          </StackPanel>
           <Button Content="⚡ Connect"
                   Command="{Binding DataContext.ConnectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                   Style="{StaticResource PrimaryButtonStyle}"

@@ -148,7 +148,7 @@ public sealed partial class TraceLogViewModel : ObservableObject
             timestamp,
             $"0x{frame.Id:X3}",
             direction,
-            frame.Dlc,
+            frame.PayloadLength,
             string.Join(" ", bytes),
             Summarize(frame),
             bytes,

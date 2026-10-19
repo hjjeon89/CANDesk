@@ -5,11 +5,8 @@ namespace CANDesk.Hal.Peak;
 
 /// <summary>
 /// Thin P/Invoke surface over PEAK-System's PCAN-Basic API (<c>PCANBasic.dll</c>), scoped to
-/// what Classic CAN open/close/send/receive/reset/status needs. Field layouts follow PCAN-Basic's
-/// public API documentation; verify against the PCANBasic.h shipped with the installed driver
-/// version before first hardware run, since this was written without that header in hand.
-/// CAN-FD (<c>CAN_InitializeFD</c>/<c>TPCANMsgFD</c>) is intentionally out of scope for v1, matching
-/// Project_Architecture.md §11 ("1차 릴리스는 Classic CAN 우선").
+/// Classic CAN and CAN FD open/close/send/receive/reset/status. Layouts and constants follow
+/// PEAK's public PCANBasic.h and PCANBasic.cs headers.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static partial class PCanBasicNative
@@ -20,6 +17,8 @@ internal static partial class PCanBasicNative
     public const byte MessageStandard = 0x00;
     public const byte MessageRtr = 0x01;
     public const byte MessageExtended = 0x02;
+    public const byte MessageFd = 0x04;
+    public const byte MessageBitRateSwitch = 0x08;
     public const byte MessageErrorFrame = 0x40;
     public const byte MessageStatus = 0x80;
 
@@ -31,13 +30,10 @@ internal static partial class PCanBasicNative
     public const uint StatusBusOff = 0x00010;
     public const uint StatusBusPassive = 0x40000;
 
-    // TPCANParameter/TPCANChannelCondition values are deliberately not declared here: enumeration
-    // (PeakCanDeviceFactory) probes with CAN_Initialize/CAN_Uninitialize instead of CAN_GetValue,
-    // because the exact PCAN_CHANNEL_CONDITION parameter id is the kind of detail this file's
-    // remarks warn needs verifying against the real header — a wrong id silently reports every
-    // channel as unavailable (confirmed against real PEAK hardware: this was the actual bug behind
-    // "no PEAK channel was found" until the probe-based rewrite). Initialize/Uninitialize are the
-    // same calls the real connect path uses, so there's nothing extra to get wrong here.
+    public const byte BitrateInfoFd = 0x19;
+    public const byte AttachedChannelsCount = 0x2A;
+    public const byte AttachedChannels = 0x2B;
+    public const uint FeatureFdCapable = 0x01;
 
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct TPCANMsg
@@ -46,6 +42,27 @@ internal static partial class PCanBasicNative
         public byte MsgType;
         public byte Length;
         public fixed byte Data[8];
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct TPCANMsgFD
+    {
+        public uint Id;
+        public byte MsgType;
+        public byte Dlc;
+        public fixed byte Data[64];
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct TPCANChannelInformation
+    {
+        public ushort ChannelHandle;
+        public byte DeviceType;
+        public byte ControllerNumber;
+        public uint DeviceFeatures;
+        public fixed byte DeviceName[33];
+        public uint DeviceId;
+        public uint ChannelCondition;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -59,6 +76,15 @@ internal static partial class PCanBasicNative
     [LibraryImport(DllName, EntryPoint = "CAN_Initialize")]
     public static partial uint Initialize(ushort channel, ushort btr0Btr1, byte hwType, uint ioPort, ushort interrupt);
 
+    [LibraryImport(DllName, EntryPoint = "CAN_InitializeFD", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial uint InitializeFd(ushort channel, string bitrate);
+
+    [LibraryImport(DllName, EntryPoint = "CAN_GetValue")]
+    public static partial uint GetValue(ushort channel, byte parameter, out uint value, uint bufferLength);
+
+    [LibraryImport(DllName, EntryPoint = "CAN_GetValue")]
+    public static unsafe partial uint GetValueBytes(ushort channel, byte parameter, byte* value, uint bufferLength);
+
     [LibraryImport(DllName, EntryPoint = "CAN_Uninitialize")]
     public static partial uint Uninitialize(ushort channel);
 
@@ -71,6 +97,12 @@ internal static partial class PCanBasicNative
     [LibraryImport(DllName, EntryPoint = "CAN_Read")]
     public static partial uint Read(ushort channel, out TPCANMsg message, out TPCANTimestamp timestamp);
 
+    [LibraryImport(DllName, EntryPoint = "CAN_ReadFD")]
+    public static partial uint ReadFd(ushort channel, out TPCANMsgFD message, out ulong timestampUs);
+
     [LibraryImport(DllName, EntryPoint = "CAN_Write")]
     public static partial uint Write(ushort channel, ref TPCANMsg message);
+
+    [LibraryImport(DllName, EntryPoint = "CAN_WriteFD")]
+    public static partial uint WriteFd(ushort channel, ref TPCANMsgFD message);
 }

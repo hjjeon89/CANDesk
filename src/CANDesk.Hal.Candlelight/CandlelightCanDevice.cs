@@ -492,7 +492,7 @@ internal sealed class CandlelightCanDevice : ICanDevice
     private void WriteElmueFrame(WinUsbDevice device, CanFrame frame)
     {
         var length = frame.PayloadLength;
-        var isFdFrame = frame.Flags.HasFlag(CanFrameFlags.Fd) || _useElmueProtocol || length > 8;
+        var isFdFrame = frame.Flags.HasFlag(CanFrameFlags.Fd);
         if (!isFdFrame && length > 8)
         {
             throw new InvalidOperationException("Classic CAN frames cannot carry more than 8 data bytes.");
@@ -508,11 +508,11 @@ internal sealed class CandlelightCanDevice : ICanDevice
         device.WriteBulk(buffer[..buffer[0]]);
     }
 
-    private byte ToElmueFrameFlags(CanFrame frame, bool isFdFrame)
+    private static byte ToElmueFrameFlags(CanFrame frame, bool isFdFrame)
     {
         byte flags = 0;
         if (isFdFrame) flags |= ElmueFrameFlagFd;
-        if (frame.Flags.HasFlag(CanFrameFlags.BitRateSwitch) || (_useElmueProtocol && isFdFrame))
+        if (isFdFrame && frame.Flags.HasFlag(CanFrameFlags.BitRateSwitch))
         {
             flags |= ElmueFrameFlagBitRateSwitch;
         }

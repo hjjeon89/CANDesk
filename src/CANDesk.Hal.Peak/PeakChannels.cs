@@ -19,6 +19,32 @@ internal static class PeakChannels
 /// </summary>
 internal static class PeakBitTiming
 {
+    public const int FdClockHz = 80_000_000;
+
+    public static string ToFdString(CanBusConfig configuration)
+    {
+        configuration.Validate();
+        if (!configuration.IsCanFd) throw new ArgumentException("CAN FD configuration is required.", nameof(configuration));
+        var clock = configuration.ClockFrequencyHz;
+        if (clock is not (80_000_000 or 60_000_000 or 40_000_000 or 30_000_000 or 24_000_000 or 20_000_000))
+            throw new ArgumentOutOfRangeException(nameof(configuration), "PCAN CAN FD clock must be 80, 60, 40, 30, 24, or 20 MHz.");
+        var nominal = GetFdSegments(configuration.NominalTiming, configuration.Nominal, clock, dataPhase: false);
+        var data = GetFdSegments(configuration.DataTiming, configuration.Data!, clock, dataPhase: true);
+        return FormattableString.Invariant($"f_clock={clock},nom_brp={nominal.Prescaler},nom_tseg1={nominal.Tseg1},nom_tseg2={nominal.Tseg2},nom_sjw={nominal.Sjw},data_brp={data.Prescaler},data_tseg1={data.Tseg1},data_tseg2={data.Tseg2},data_sjw={data.Sjw}");
+    }
+
+    private static RawBitTimingSegments GetFdSegments(BitTimingConfig? timing, BitTimingSetting setting, int clockHz, bool dataPhase)
+    {
+        var segments = timing?.InputMode == BitTimingInputMode.RawSegments
+            ? timing.RawSegments!
+            : new BitTimingCalculator().Calculate(timing?.Preset ?? setting, clockHz);
+        segments.Validate();
+        if (segments.Prescaler > 1024 || segments.Tseg1 > (dataPhase ? 32 : 256)
+            || segments.Tseg2 > (dataPhase ? 16 : 128) || segments.Sjw > (dataPhase ? 16 : 128))
+            throw new ArgumentOutOfRangeException(nameof(timing), "Timing exceeds the PCAN CAN FD controller limits.");
+        return segments;
+    }
+
     // Standard TPCANBaudrate values (BTR0BTR1) for a 16 MHz SJA1000 clock, per PCANBasic.h.
     private static readonly IReadOnlyDictionary<int, ushort> StandardBtr0Btr1 = new Dictionary<int, ushort>
     {

@@ -1,3 +1,5 @@
+using CANDesk.Hal;
+
 namespace CANDesk.Core.MessageDb;
 
 public enum ByteOrder { Intel, Motorola }
@@ -15,12 +17,14 @@ public sealed record DecodedSignal(uint CanId, string MessageName, string Signal
 
 public interface IMessageDatabase
 {
+    CanBusConfig? BusConfiguration => null;
     IReadOnlyCollection<DbcMessage> Messages { get; }
     bool TryGetMessage(uint canId, out DbcMessage message);
 }
 
-public sealed class MessageDatabase(IEnumerable<DbcMessage> messages) : IMessageDatabase
+public sealed class MessageDatabase(IEnumerable<DbcMessage> messages, CanBusConfig? busConfiguration = null) : IMessageDatabase
 {
+    public CanBusConfig? BusConfiguration { get; } = busConfiguration;
     private readonly Dictionary<uint, DbcMessage> _byId = messages.ToDictionary(message => message.CanId);
     public IReadOnlyCollection<DbcMessage> Messages => _byId.Values;
     public bool TryGetMessage(uint canId, out DbcMessage message) => _byId.TryGetValue(canId, out message!);

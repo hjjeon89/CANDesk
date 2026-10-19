@@ -1,6 +1,7 @@
 using System.Text;
 using CANDesk.Core.Dispatch;
 using CANDesk.Core.MessageDb;
+using CANDesk.Hal;
 using Xunit;
 
 namespace CANDesk.Core.Tests;
@@ -24,6 +25,12 @@ public sealed class BevCanParserTests
         Assert.Equal(messageCount, document.Database.Messages.Count);
         Assert.Equal(signalCount, document.Database.Messages.Sum(message => message.Signals.Count));
         Assert.Equal(nodeCount, document.Nodes.Count);
+        var bus = Assert.IsType<CanBusConfig>(document.Database.BusConfiguration);
+        Assert.Equal(filename == "G-CANFD.bevcan" ? CanBusMode.Fd : CanBusMode.Classic, bus.Mode);
+        Assert.Equal(filename == "G-CANFD.bevcan" ? 500 : 250, bus.Nominal.BitrateKbps);
+        Assert.Equal(filename == "G-CANFD.bevcan" ? 80 : 87.5, bus.Nominal.SamplePointPercent);
+        if (bus.IsCanFd) Assert.Equal(new BitTimingSetting(1000, 80), bus.Data);
+        else Assert.Null(bus.Data);
         var editable = new EditableMessageDatabase(document.Database, document.Nodes, document.Assignments);
         if (filename == "G-CANFD.bevcan")
         {
@@ -66,6 +73,10 @@ public sealed class BevCanParserTests
         await using var input = new MemoryStream(CreateDatabase(version));
         var document = await new BevCanParser().ParseDocumentAsync(input);
 
+        var bus = Assert.IsType<CanBusConfig>(document.Database.BusConfiguration);
+        Assert.Equal(CanBusMode.Fd, bus.Mode);
+        Assert.Equal(new BitTimingSetting(500, version >= 3 ? 80 : 87.5), bus.Nominal);
+        Assert.Equal(version >= 3 ? new BitTimingSetting(1000, 80) : null, bus.Data);
         var message = Assert.Single(document.Database.Messages);
         Assert.Equal(0x123u, message.CanId);
         Assert.True(message.IsExtended);
@@ -86,6 +97,8 @@ public sealed class BevCanParserTests
             id => document.Assignments[id], saved);
         saved.Position = 0;
         var reopened = await new CandeskXmlParser().ParseDocumentAsync(saved);
+        Assert.Equal(document.Database.BusConfiguration, reopened.Database.BusConfiguration);
+        Assert.Equal(document.Database.BusConfiguration, new EditableMessageDatabase(document.Database).Snapshot.BusConfiguration);
         Assert.Equal(message.Signals, Assert.Single(reopened.Database.Messages).Signals);
         Assert.Equal(document.Assignments[0x123].TransmitterNode, reopened.Assignments[0x123].TransmitterNode);
     }
@@ -148,7 +161,24 @@ public sealed class BevCanParserTests
         await Assert.ThrowsAsync<InvalidDataException>(() => new BevCanParser().ParseAsync(input));
     }
 
-    private static byte[] CreateDatabase(ushort version, byte byteOrder = 0, string transmitter = "", bool duplicateTx = false)
+    [Theory]
+    [InlineData(-1000, 80, 1)]
+    [InlineData(500001, 80, 1)]
+    [InlineData(500000, 0, 1)]
+    [InlineData(500000, 100, 1)]
+    [InlineData(500000, double.NaN, 1)]
+    [InlineData(500000, double.PositiveInfinity, 1)]
+    [InlineData(500000, 80, 2)]
+    public async Task ParseAsync_RejectsInvalidBusSettings(int bitrate, double samplePoint, byte protocol)
+    {
+        await using var input = new MemoryStream(CreateDatabase(3, nominalBitrate: bitrate,
+            nominalSamplePoint: samplePoint, protocol: protocol));
+        var exception = await Record.ExceptionAsync(() => new BevCanParser().ParseAsync(input));
+        Assert.True(exception is FormatException or InvalidDataException);
+    }
+
+    private static byte[] CreateDatabase(ushort version, byte byteOrder = 0, string transmitter = "", bool duplicateTx = false,
+        int nominalBitrate = 500000, double nominalSamplePoint = 80, byte protocol = 1)
     {
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
@@ -159,12 +189,12 @@ public sealed class BevCanParserTests
         writer.Write(500000);
         if (version >= 3)
         {
-            writer.Write((byte)1);
+            writer.Write(protocol);
             writer.Write("CAN FD 500K/1M");
             for (var index = 0; index < 2; index++)
             {
-                writer.Write(500000);
-                writer.Write(80d);
+                writer.Write(index == 0 ? nominalBitrate : 1000000);
+                writer.Write(index == 0 ? nominalSamplePoint : 80d);
                 writer.Write(1);
                 writer.Write(15);
                 writer.Write(4);

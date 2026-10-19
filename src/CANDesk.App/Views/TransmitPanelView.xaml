@@ -98,6 +98,12 @@
                 <TextBlock Text="PAYLOAD (HEX)" Style="{StaticResource CaptionTextStyle}" />
                 <TextBox Text="{Binding Payload}" FontFamily="{DynamicResource MonoFontFamily}" Margin="0,3,0,0" />
                 <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                  <CheckBox Content="FD" IsChecked="{Binding IsFd}" Margin="0,0,14,0"
+                            IsEnabled="{Binding DataContext.UseCanFd, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            ToolTip="Send a CAN FD frame on an FD connection. Match PCAN-View; takes effect on the next Send or cyclic/triggered Start." />
+                  <CheckBox Content="BRS" IsChecked="{Binding BitRateSwitch}" Margin="0,0,14,0"
+                            IsEnabled="{Binding DataContext.UseCanFd, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            ToolTip="Switch to the configured Data bitrate for FD frames. Match PCAN-View; takes effect on the next Send or cyclic/triggered Start." />
                   <CheckBox Content="Auto Counter" IsChecked="{Binding AutoCounter}"
                             ToolTip="AUTOSAR E2E Profile 1: 4-bit rolling counter (0-15) in the low nibble of the last payload byte. Applies once you Start the cyclic job; toggling while running takes effect on the next Start." />
                   <CheckBox Content="E2E CRC8" IsChecked="{Binding E2eCrc}" Margin="14,0,0,0"

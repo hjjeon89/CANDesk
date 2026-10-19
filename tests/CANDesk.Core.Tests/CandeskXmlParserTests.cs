@@ -1,12 +1,27 @@
 using System.Text;
 using CANDesk.Core.Dispatch;
 using CANDesk.Core.MessageDb;
+using CANDesk.Hal;
 using Xunit;
 
 namespace CANDesk.Core.Tests;
 
 public sealed class CandeskXmlParserTests
 {
+    [Theory]
+    [InlineData("", null, null)]
+    [InlineData("<dbcInfomation baudrate='250000' CANTYPE='CAN' CANFDBitrate='' />", 250, null)]
+    [InlineData("<dbcInfomation baudrate='500000' CANTYPE='CAN FD' CANFDBitrate='2000000' />", 500, 2000)]
+    public async Task ParseAsync_ReadsLegacyBusSettings(string metadata, int? nominal, int? data)
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes($"<DBCData>{metadata}</DBCData>"));
+        var database = await new CandeskXmlParser().ParseAsync(input);
+        Assert.Equal(nominal, database.BusConfiguration?.Nominal.BitrateKbps);
+        Assert.Equal(data, database.BusConfiguration?.Data?.BitrateKbps);
+        if (nominal.HasValue)
+            Assert.Equal(data.HasValue ? CanBusMode.Fd : CanBusMode.Classic, database.BusConfiguration!.Mode);
+    }
+
     [Theory]
     [InlineData("aa.xml", 1, 4)]
     [InlineData("LifeCycle_rev0p3_CAN_DB - 배포_full.xml", 20, 90)]

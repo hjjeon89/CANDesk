@@ -10,40 +10,45 @@ namespace CANDesk.Hal.Peak;
 /// 벤더만 비활성화, 앱 크래시 방지").
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class PeakCanDeviceFactory : ICanDeviceFactory
+public sealed class PeakCanDeviceFactory : ICanDeviceFactory, ICanDeviceFactoryDiagnostics
 {
     public string Vendor => "PEAK";
+    public string LastEnumerationDiagnostics { get; private set; } = string.Empty;
 
-    // Any standard bitrate works for the presence probe below; CAN_Initialize succeeding (and
-    // getting cleanly undone by CAN_Uninitialize right after) just proves the channel exists and
-    // isn't already claimed by another application — the real Connect later re-initializes with
-    // whatever bitrate the user actually configured.
-    private static readonly ushort ProbeBtr0Btr1 = PeakBitTiming.FromPreset(new BitTimingSetting(500, 87.5));
-
-    public Task<IReadOnlyList<CanDeviceDescriptor>> EnumerateAsync(CancellationToken cancellationToken = default)
+    public unsafe Task<IReadOnlyList<CanDeviceDescriptor>> EnumerateAsync(CancellationToken cancellationToken = default)
     {
         var descriptors = new List<CanDeviceDescriptor>();
+        LastEnumerationDiagnostics = string.Empty;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Discovery must not activate a Classic controller on a live CAN FD bus.
+            var result = PCanBasicNative.GetValue(0, PCanBasicNative.AttachedChannelsCount, out var count, sizeof(uint));
+            if (result != PCanBasicNative.StatusOk)
+                throw new InvalidOperationException($"PCAN attached-channel count query failed: 0x{result:X}. PCAN-Basic 4.4 or later is required.");
+            if (count > 1024) throw new InvalidOperationException($"PCAN returned an invalid channel count: {count}.");
+            if (count == 0) return Task.FromResult<IReadOnlyList<CanDeviceDescriptor>>(descriptors);
+
+            var channels = new PCanBasicNative.TPCANChannelInformation[count];
+            fixed (PCanBasicNative.TPCANChannelInformation* buffer = channels)
+                result = PCanBasicNative.GetValueBytes(0, PCanBasicNative.AttachedChannels, (byte*)buffer,
+                    checked((uint)(channels.Length * sizeof(PCanBasicNative.TPCANChannelInformation))));
+            if (result != PCanBasicNative.StatusOk)
+                throw new InvalidOperationException($"PCAN attached-channel query failed: 0x{result:X}.");
+
             foreach (var (handle, name) in PeakChannels.UsbChannels)
             {
-                var status = PCanBasicNative.Initialize(handle, ProbeBtr0Btr1, hwType: 0, ioPort: 0, interrupt: 0);
-                if (status != PCanBasicNative.StatusOk)
-                {
-                    continue;
-                }
-
-                PCanBasicNative.Uninitialize(handle);
-                descriptors.Add(new CanDeviceDescriptor(Vendor, handle.ToString("X"), name, [name], SupportsCanFd: false));
+                var channel = channels.FirstOrDefault(channel => channel.ChannelHandle == handle);
+                if (channel.ChannelCondition == 0) continue;
+                var supportsFd = (channel.DeviceFeatures & PCanBasicNative.FeatureFdCapable) != 0;
+                descriptors.Add(new CanDeviceDescriptor(Vendor, handle.ToString("X"), name,
+                    [$"Channel {handle - 0x50}", name], SupportsCanFd: supportsFd,
+                    ClockFrequencyHz: supportsFd ? PeakBitTiming.FdClockHz : null));
             }
         }
-        catch (DllNotFoundException)
+        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException)
         {
-            // PCAN-Basic driver is not installed on this machine; report no PEAK devices instead of crashing.
-        }
-        catch (EntryPointNotFoundException)
-        {
-            // An installed PCANBasic.dll that is older/newer than expected and is missing an entry point.
+            LastEnumerationDiagnostics = exception.Message;
         }
 
         return Task.FromResult<IReadOnlyList<CanDeviceDescriptor>>(descriptors);
