@@ -43,6 +43,7 @@
                     <Button Content="Cyclic" Padding="8,3" FontSize="11" Command="{Binding DataContext.ToggleCyclicCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                     <Button Content="Trigger" Padding="8,3" FontSize="11" Command="{Binding DataContext.ToggleTriggeredCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                     <Button Content="Send Now" Style="{StaticResource PrimaryButtonStyle}" Padding="8,3" FontSize="11" Command="{Binding DataContext.SendNowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                    <Button Content="Delete" Padding="8,3" FontSize="11" Command="{Binding DataContext.RemoveJobCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" ToolTip="Remove this TX message and stop its cyclic and triggered transmissions" />
                   </StackPanel>
                 </DockPanel>
                 <UniformGrid Columns="2" Margin="0,10,0,8">
@@ -87,9 +88,12 @@
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="76" />
+                            <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" Foreground="{DynamicResource TextSubBrush}" />
-                          <TextBox Grid.Column="1" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}" />
+                          <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource TextSubBrush}" />
+                          <TextBlock Grid.Column="2" Text="{Binding RangeText}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="10" Foreground="{DynamicResource TextSubBrush}" />
+                          <TextBox Grid.Column="1" Style="{StaticResource CompactNumberBoxStyle}" Text="{Binding ValueText, UpdateSourceTrigger=Explicit}"
+                                   KeyDown="OnSignalValueKeyDown" ToolTip="Press Enter to apply the signal value" />
                         </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>

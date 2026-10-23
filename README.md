@@ -1,5 +1,13 @@
 # CANDesk
 
+### 변경 이력 (Fixes & Changes)
+
+#### 2026-10-23 — TX 편집 및 송신 제어 개선
+
+- **Fix — 시그널 값 적용 시점:** TX 시그널 값은 입력 후 **Enter**를 눌렀을 때 페이로드와 실행 중인 주기·트리거 송신에 반영됩니다. 입력 중이거나 포커스를 옮길 때는 적용되지 않으며, 숫자로 해석할 수 없는 입력은 기존 페이로드를 유지합니다.
+- **Change — TX 메시지 삭제:** 각 TX 메시지에 **Delete** 버튼을 추가했습니다. 삭제 시 해당 메시지의 주기·트리거 송신을 모두 중지하고 목록에서 제거합니다.
+- **Change — 시그널 범위 표시:** 값 입력란 오른쪽에 메시지 DB에 정의된 **Min / Max**를 표시합니다. 정의되지 않은 한계값은 `—`로 표시합니다.
+
 ### Build files with PowerShell (Windows x64)
 
 Run this command from the repository root:

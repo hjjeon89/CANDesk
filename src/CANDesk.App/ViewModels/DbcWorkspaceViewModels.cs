@@ -484,6 +484,18 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     [RelayCommand]
     private void AddJob() => Jobs.Add(new("0x000", "New TX Job", "0", "8", "00 00 00 00 00 00 00 00", false, false, false));
 
+    [RelayCommand]
+    private void RemoveJob(TxJobRow? job)
+    {
+        if (job is null) return;
+
+        if (_cyclicJobIds.Remove(job, out var cyclicJobId)) _scheduler?.Cancel(cyclicJobId);
+        if (_triggeredJobIds.Remove(job, out var triggeredJobId)) _scheduler?.Cancel(triggeredJobId);
+        job.IsEnabled = false;
+        job.IsTriggered = false;
+        Jobs.Remove(job);
+    }
+
     public void SetNodeEmulationProviders(
         Func<IReadOnlyList<string>> nodeNamesProvider,
         Func<string, IReadOnlyList<DbcMessage>> nodeMessagesProvider)

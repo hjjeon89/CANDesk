@@ -667,6 +667,7 @@ public sealed partial class TxSignalEditRow : ObservableObject
     }
 
     public string DisplayName => string.IsNullOrEmpty(_signal.Unit) ? _signal.Name : $"{_signal.Name} ({_signal.Unit})";
+    public string RangeText => $"Min: {_signal.Minimum?.ToString() ?? "—"}   Max: {_signal.Maximum?.ToString() ?? "—"}";
 
     private bool _isSyncingFromPayload;
 
