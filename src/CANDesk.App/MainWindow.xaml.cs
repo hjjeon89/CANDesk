@@ -12,6 +12,7 @@ public partial class MainWindow : Window
     {
         _viewModel = viewModel;
         InitializeComponent();
+        Title = $"CANDesk {typeof(MainWindow).Assembly.GetName().Version!.ToString(3)}";
         DataContext = viewModel;
         _viewModel.MessageEditorRequested += OnMessageEditorRequested;
         _viewModel.SignalMonitorRequested += OnSignalMonitorRequested;

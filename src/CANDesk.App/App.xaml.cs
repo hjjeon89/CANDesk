@@ -35,6 +35,7 @@ public partial class App : Application
         // once that succeeds).
         _mainViewModel = _host.Services.GetRequiredService<MainViewModel>();
         _host.Services.GetRequiredService<MainWindow>().Show();
+        await _mainViewModel.Connection.RefreshDevicesAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -41,7 +41,7 @@ public sealed class PeakCanDeviceFactory : ICanDeviceFactory, ICanDeviceFactoryD
                 var channel = channels.FirstOrDefault(channel => channel.ChannelHandle == handle);
                 if (channel.ChannelCondition == 0) continue;
                 var supportsFd = (channel.DeviceFeatures & PCanBasicNative.FeatureFdCapable) != 0;
-                descriptors.Add(new CanDeviceDescriptor(Vendor, handle.ToString("X"), name,
+                descriptors.Add(new CanDeviceDescriptor(Vendor, handle.ToString("X"), $"{name} (ID: {channel.DeviceId:X8})",
                     [$"Channel {handle - 0x50}", name], SupportsCanFd: supportsFd,
                     ClockFrequencyHz: supportsFd ? PeakBitTiming.FdClockHz : null));
             }

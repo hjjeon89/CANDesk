@@ -66,9 +66,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public DeviceConnectionViewModel Connection { get; }
     // "Opening" briefly disables both buttons so a double-click can't fire overlapping connect
     // attempts; every other status (including BusOff/Faulted) still allows a fresh Connect to recover.
-    public bool CanConnect => Status != "Opening";
+    public bool CanConnect => Status != "Opening" && !Connection.IsDiscovering
+        && Connection.SelectedDevice is not null && Connection.SelectedChannel is not null;
     public bool CanDisconnect => Status is "Open" or "BusOff" or "Faulted";
-    public string DeviceStatusText => Status == "Open" ? $"Connected: {Connection.SelectedVendor} ({Connection.SelectedChannel}) - {_connection.CurrentConfiguration?.Nominal}" : "Disconnected";
+    public string DeviceStatusText => Status == "Open" ? $"Connected: {_connection.CurrentDevice?.ChannelName} - {_connection.CurrentConfiguration?.Nominal}" : "Disconnected";
     public string BusStatusText => Status switch
     {
         "Open" => "Normal (OK)",
@@ -98,6 +99,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _connection = connection;
         _themeService = themeService;
         Connection = connectionViewModel;
+        Connection.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(DeviceConnectionViewModel.SelectedDevice)
+                or nameof(DeviceConnectionViewModel.SelectedChannel) or nameof(DeviceConnectionViewModel.IsDiscovering))
+            {
+                OnPropertyChanged(nameof(CanConnect));
+                ConnectCommand.NotifyCanExecuteChanged();
+            }
+        };
         _dispatcher = CreateDispatcher();
         DbcSignalTree.SendToTransmitRequested += message =>
         {
@@ -399,7 +409,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _dispatcher = CreateDispatcher();
         try
         {
-            await _connection.ConnectByVendorAsync(Connection.SelectedVendor, Connection.SelectedChannel, configuration);
+            var device = Connection.SelectedDevice ?? throw new InvalidOperationException("Select a CAN device first.");
+            var channel = Connection.SelectedChannel ?? throw new InvalidOperationException("Select a CAN channel first.");
+            await _connection.ConnectByVendorAsync(Connection.SelectedVendor, device.DeviceId, channel, configuration);
         }
         catch (Exception exception)
         {

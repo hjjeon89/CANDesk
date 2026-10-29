@@ -26,7 +26,7 @@ public sealed class CandlelightCanDeviceFactory : ICanDeviceFactory, ICanDeviceF
                 Vendor,
                 device.InstanceId,
                 CreateDisplayName(device),
-                [$"Channel 0 - {CreateDisplayName(device)}"],
+                ["Channel 0"],
                 SupportsCanFd: true))
             .ToList();
         return Task.FromResult(descriptors);
@@ -47,8 +47,8 @@ public sealed class CandlelightCanDeviceFactory : ICanDeviceFactory, ICanDeviceF
     private static string CreateDisplayName(WinUsbDeviceInfo device)
     {
         var name = string.IsNullOrWhiteSpace(device.Name) ? "CANable Candlelight" : device.Name;
-        var suffix = string.IsNullOrWhiteSpace(device.Location) ? ShortInstanceId(device.InstanceId) : device.Location;
-        return $"{name} [{suffix}]";
+        var location = string.IsNullOrWhiteSpace(device.Location) ? string.Empty : $" ({device.Location})";
+        return $"WinUSB: {name} [{ShortInstanceId(device.InstanceId)}]{location}";
     }
 
     private static string ShortInstanceId(string instanceId)

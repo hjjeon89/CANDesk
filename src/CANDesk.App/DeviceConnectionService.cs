@@ -14,28 +14,30 @@ public sealed class DeviceConnectionService(IEnumerable<ICanDeviceFactory> facto
     public ICanDevice? CurrentDevice { get; private set; }
     public CanBusConfig? CurrentConfiguration { get; private set; }
 
-    /// <summary>Connects using the vendor picked in <c>DeviceConnectionViewModel.SelectedVendor</c>
-    /// (a display label like "PEAK"). Enumerates the vendor's real hardware and picks the descriptor
-    /// matching the requested channel name. PEAK channel aliases select the physical USB channel.</summary>
-    public async Task ConnectByVendorAsync(string vendorLabel, string channelName, CanBusConfig configuration, CancellationToken cancellationToken = default)
-    {
-        var vendor = vendorLabel.Split(' ')[0];
-        var factory = factories.FirstOrDefault(factory => factory.Vendor == vendor)
-            ?? throw new InvalidOperationException($"No CAN driver is registered for vendor '{vendor}'.");
+    private ICanDeviceFactory GetFactory(string vendor) => factories.FirstOrDefault(factory => factory.Vendor == vendor)
+        ?? throw new InvalidOperationException($"No CAN driver is registered for vendor '{vendor}'.");
 
+    public async Task<IReadOnlyList<CanDeviceDescriptor>> EnumerateByVendorAsync(string vendor, CancellationToken cancellationToken = default)
+    {
+        var factory = GetFactory(vendor);
         var descriptors = await factory.EnumerateAsync(cancellationToken).ConfigureAwait(false);
-        var descriptor = descriptors.FirstOrDefault(d => d.Channels.Contains(channelName));
-        // PEAK aliases identify physical USB channels; never silently substitute a different bus.
-        if (descriptor is null && vendor != "PEAK") descriptor = descriptors.FirstOrDefault();
-        if (descriptor is null)
+        if (descriptors.Count == 0)
         {
             var diagnostics = (factory as ICanDeviceFactoryDiagnostics)?.LastEnumerationDiagnostics;
             var detail = string.IsNullOrEmpty(diagnostics) ? string.Empty : $" ({diagnostics})";
             throw new InvalidOperationException(
-                $"No {vendor} {channelName} was found. Make sure the vendor SDK/driver is installed and at least one channel is available.{detail}");
+                $"No {vendor} device was found. Make sure the vendor SDK/driver is installed and at least one channel is available.{detail}");
         }
+        return descriptors;
+    }
 
-        await ConnectAsync(factory, descriptor.DeviceId, descriptor.DisplayName, configuration, cancellationToken).ConfigureAwait(false);
+    public async Task ConnectByVendorAsync(string vendor, string deviceId, string channelName, CanBusConfig configuration, CancellationToken cancellationToken = default)
+    {
+        var descriptors = await EnumerateByVendorAsync(vendor, cancellationToken).ConfigureAwait(false);
+        var descriptor = descriptors.FirstOrDefault(device => device.DeviceId == deviceId && device.Channels.Contains(channelName))
+            ?? throw new InvalidOperationException($"The selected {vendor} device '{deviceId}' / {channelName} is no longer available. Refresh and select a device.");
+
+        await ConnectAsync(GetFactory(vendor), descriptor.DeviceId, $"{descriptor.DisplayName} / {channelName}", configuration, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ConnectAsync(ICanDeviceFactory factory, string deviceId, string channelName, CanBusConfig configuration, CancellationToken cancellationToken = default)

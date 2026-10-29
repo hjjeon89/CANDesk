@@ -9,15 +9,26 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal">
+        <WrapPanel Orientation="Horizontal">
           <TextBlock Text="VENDOR" Style="{StaticResource CaptionTextStyle}" Margin="0,0,6,0" VerticalAlignment="Center" />
           <ComboBox Width="105" ItemsSource="{Binding Vendors}" SelectedItem="{Binding SelectedVendor}" VerticalAlignment="Center" />
+          <TextBlock Text="DEVICE" Style="{StaticResource CaptionTextStyle}" Margin="12,0,6,0" VerticalAlignment="Center" />
+          <ComboBox Width="260" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
+                    VerticalAlignment="Center" ToolTip="{Binding SelectedDevice.DeviceId}" AutomationProperties.Name="CAN device">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DeviceId}" TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Content="Refresh" Command="{Binding RefreshDevicesCommand}" Margin="6,0,0,0" ToolTip="Scan connected CAN devices" />
           <TextBlock Text="CHANNEL" Style="{StaticResource CaptionTextStyle}" Margin="12,0,6,0" VerticalAlignment="Center" />
           <ComboBox Width="150" ItemsSource="{Binding Channels}" SelectedItem="{Binding SelectedChannel}" VerticalAlignment="Center" />
           <Border Style="{StaticResource ToolbarSeparatorStyle}" />
@@ -39,8 +50,8 @@
           <Button Content="⏻ Disconnect"
                   Command="{Binding DataContext.DisconnectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                   Margin="6,0,0,0" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
+        </WrapPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Top">
           <Button Content="{Binding DataContext.CaptureCommandText, RelativeSource={RelativeSource AncestorType=Window}}"
                   Command="{Binding DataContext.ToggleCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
           <Button Content="⟲ Clear"
@@ -49,7 +60,9 @@
                   ToolTip="Clear both Message Monitor and Trace" />
         </StackPanel>
       </Grid>
-      <Border Grid.Row="1"
+      <TextBlock Grid.Row="1" Text="{Binding DiscoveryStatus}" ToolTip="{Binding DiscoveryStatus}" TextTrimming="CharacterEllipsis"
+                 Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
+      <Border Grid.Row="2"
               Margin="0,8,0,0"
               Padding="8,6"
               Background="{DynamicResource PanelBrush}"

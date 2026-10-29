@@ -80,7 +80,94 @@ public sealed class DeviceConnectionViewModelTests
         Assert.Null(viewModel.BuildConfiguration().Data);
     }
 
-    private static DeviceConnectionViewModel CreateViewModel() => new(new BitrateTableProvider(), new BitTimingCalculator());
+    [Fact]
+    public async Task RefreshDevices_SelectionUpdatesChannelsAndSurvivesReordering()
+    {
+        CanDeviceDescriptor first = new("PEAK", "51", "PCAN-USB 1 (ID: 00000001)", ["Channel 1"], true);
+        CanDeviceDescriptor second = new("PEAK", "52", "PCAN-USB 2 (ID: 00000002)", ["Channel 2", "Channel 3"], true);
+        IReadOnlyList<CanDeviceDescriptor> devices = [first, second];
+        var factory = new DiscoveryFactory("PEAK", () => Task.FromResult(devices));
+        var viewModel = new DeviceConnectionViewModel(new BitrateTableProvider(), new BitTimingCalculator(), new DeviceConnectionService([factory]));
+
+        await viewModel.RefreshDevicesAsync();
+        Assert.Equal(devices, viewModel.Devices);
+        Assert.Equal(first, viewModel.SelectedDevice);
+        viewModel.SelectedDevice = second;
+        Assert.Equal(second.Channels, viewModel.Channels);
+        Assert.Equal("Channel 2", viewModel.SelectedChannel);
+        viewModel.SelectedChannel = "Channel 3";
+        devices = [second with { Channels = ["Channel 2", "Channel 3"] }, first];
+
+        await viewModel.RefreshDevicesAsync();
+
+        Assert.Equal("52", viewModel.SelectedDevice!.DeviceId);
+        Assert.Equal("Channel 3", viewModel.SelectedChannel);
+        Assert.Empty(viewModel.DiscoveryStatus);
+        Assert.False(viewModel.IsDiscovering);
+
+        devices = [first];
+        await viewModel.RefreshDevicesAsync();
+        Assert.Null(viewModel.SelectedDevice);
+        Assert.Null(viewModel.SelectedChannel);
+        Assert.Empty(viewModel.Channels);
+        Assert.Contains("no longer present", viewModel.DiscoveryStatus);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RefreshDevices_VendorChangeIgnoresPreviousSearch(bool failPreviousSearch)
+    {
+        var pending = new TaskCompletionSource<IReadOnlyList<CanDeviceDescriptor>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CanDeviceDescriptor canable = new("CANable", "usb-2", "WinUSB: CANable [usb-2]", ["Channel 0"], true);
+        var service = new DeviceConnectionService([
+            new DiscoveryFactory("PEAK", () => pending.Task),
+            new DiscoveryFactory("CANable", () => Task.FromResult<IReadOnlyList<CanDeviceDescriptor>>([canable]))]);
+        var viewModel = new DeviceConnectionViewModel(new BitrateTableProvider(), new BitTimingCalculator(), service);
+        var previousSearch = viewModel.RefreshDevicesAsync();
+        Assert.True(viewModel.IsDiscovering);
+        Assert.Null(viewModel.SelectedDevice);
+
+        viewModel.SelectedVendor = "CANable";
+        await viewModel.RefreshDevicesAsync();
+        if (failPreviousSearch) pending.SetException(new InvalidOperationException("Old vendor failed"));
+        else pending.SetResult([new("PEAK", "51", "PCAN-USB 1", ["Channel 1"], true)]);
+        await previousSearch;
+
+        Assert.Equal(canable, Assert.Single(viewModel.Devices));
+        Assert.Equal(canable, viewModel.SelectedDevice);
+        Assert.Equal("Channel 0", viewModel.SelectedChannel);
+        Assert.Empty(viewModel.DiscoveryStatus);
+        Assert.False(viewModel.IsDiscovering);
+    }
+
+    [Fact]
+    public async Task RefreshDevices_NoHardwareDisplaysDriverDiagnosticsAndClearsSelection()
+    {
+        var factory = new DiscoveryFactory("PEAK", () => Task.FromResult<IReadOnlyList<CanDeviceDescriptor>>([]));
+        var viewModel = new DeviceConnectionViewModel(new BitrateTableProvider(), new BitTimingCalculator(), new DeviceConnectionService([factory]));
+
+        await viewModel.RefreshDevicesAsync();
+
+        Assert.Empty(viewModel.Devices);
+        Assert.Empty(viewModel.Channels);
+        Assert.Null(viewModel.SelectedDevice);
+        Assert.Null(viewModel.SelectedChannel);
+        Assert.Contains(factory.LastEnumerationDiagnostics, viewModel.DiscoveryStatus);
+        Assert.False(viewModel.IsDiscovering);
+    }
+
+    private sealed class DiscoveryFactory(string vendor, Func<Task<IReadOnlyList<CanDeviceDescriptor>>> enumerate)
+        : ICanDeviceFactory, ICanDeviceFactoryDiagnostics
+    {
+        public string Vendor => vendor;
+        public string LastEnumerationDiagnostics => "Driver diagnostic detail";
+        public Task<IReadOnlyList<CanDeviceDescriptor>> EnumerateAsync(CancellationToken cancellationToken = default) => enumerate();
+        public Task<ICanDevice> CreateAsync(string deviceId, string channelName, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private static DeviceConnectionViewModel CreateViewModel() => new(new BitrateTableProvider(), new BitTimingCalculator(), new DeviceConnectionService([]));
 
     [Theory]
     [InlineData(40, 1, 63, 16, 16, 1, 31, 8, 8)]

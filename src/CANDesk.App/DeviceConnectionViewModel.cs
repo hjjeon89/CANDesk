@@ -1,5 +1,6 @@
 using CANDesk.Hal;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace CANDesk.App;
 
@@ -9,11 +10,17 @@ namespace CANDesk.App;
 /// </summary>
 public sealed partial class DeviceConnectionViewModel : ObservableObject
 {
+    private readonly DeviceConnectionService _connection;
+    private int _discoveryVersion;
     private readonly IBitrateTableProvider _bitrateTable;
     private readonly IBitTimingCalculator _timingCalculator;
     private const int DefaultControllerClockHz = 80_000_000;
     public IReadOnlyList<string> Vendors { get; } = ["PEAK", "Kvaser", "Vector", "CANable", "ValueCAN", "Mock"];
-    public IReadOnlyList<string> Channels { get; } = ["Channel 1", "Channel 2"];
+    [ObservableProperty] private IReadOnlyList<CanDeviceDescriptor> _devices = [];
+    [ObservableProperty] private CanDeviceDescriptor? _selectedDevice;
+    [ObservableProperty] private IReadOnlyList<string> _channels = [];
+    [ObservableProperty] private bool _isDiscovering;
+    [ObservableProperty] private string _discoveryStatus = string.Empty;
     public IReadOnlyList<BitTimingSetting> NominalPresets { get; }
     public IReadOnlyList<BitTimingSetting> DataPresets { get; }
     public IReadOnlyList<int> ControllerClocksMHz { get; } = [80, 60, 40, 30, 24, 20];
@@ -22,7 +29,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
     private int TimingClockHz => IsPeakFd ? checked(ControllerClockMHz * 1_000_000) : DefaultControllerClockHz;
 
     [ObservableProperty] private string _selectedVendor = "PEAK";
-    [ObservableProperty] private string _selectedChannel = "Channel 1";
+    [ObservableProperty] private string? _selectedChannel;
     [ObservableProperty] private CanBusMode _mode = CanBusMode.Classic;
     [ObservableProperty] private BitTimingSetting _selectedNominalTiming;
     [ObservableProperty] private BitTimingSetting _selectedDataTiming;
@@ -56,8 +63,9 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
         set { if (value) Mode = CanBusMode.Fd; }
     }
 
-    public DeviceConnectionViewModel(IBitrateTableProvider bitrateTable, IBitTimingCalculator timingCalculator)
+    public DeviceConnectionViewModel(IBitrateTableProvider bitrateTable, IBitTimingCalculator timingCalculator, DeviceConnectionService connection)
     {
+        _connection = connection;
         _bitrateTable = bitrateTable;
         _timingCalculator = timingCalculator;
         NominalPresets = bitrateTable.GetNominalPresets();
@@ -67,6 +75,43 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
         SyncNominalRawFromPreset(_selectedNominalTiming);
         SyncDataRawFromPreset(_selectedDataTiming);
         RefreshRawDescriptions();
+    }
+
+    [RelayCommand]
+    public async Task RefreshDevicesAsync()
+    {
+        var version = ++_discoveryVersion;
+        var vendor = SelectedVendor;
+        var deviceId = SelectedDevice?.DeviceId;
+        var channel = SelectedChannel;
+        SelectedDevice = null;
+        Devices = [];
+        IsDiscovering = true;
+        DiscoveryStatus = $"Searching for {vendor} devices...";
+        try
+        {
+            var devices = await Task.Run(() => _connection.EnumerateByVendorAsync(vendor));
+            if (version != _discoveryVersion) return;
+            Devices = devices;
+            SelectedDevice = deviceId is null ? devices.FirstOrDefault() : devices.FirstOrDefault(device => device.DeviceId == deviceId);
+            if (channel is not null && Channels.Contains(channel)) SelectedChannel = channel;
+            DiscoveryStatus = SelectedDevice is null ? "The selected device is no longer present. Select a device." : string.Empty;
+        }
+        catch (Exception exception)
+        {
+            if (version == _discoveryVersion) DiscoveryStatus = exception.Message;
+        }
+        finally
+        {
+            if (version == _discoveryVersion) IsDiscovering = false;
+        }
+    }
+
+    partial void OnSelectedDeviceChanged(CanDeviceDescriptor? value)
+    {
+        Channels = value?.Channels ?? [];
+        SelectedChannel = Channels.FirstOrDefault();
+        if (value is not null) DiscoveryStatus = string.Empty;
     }
 
     public void ApplyBusConfiguration(CanBusConfig? configuration)
@@ -132,6 +177,8 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     partial void OnSelectedVendorChanged(string value)
     {
+        SelectedDevice = null;
+        _ = RefreshDevicesAsync();
         OnPropertyChanged(nameof(IsPeakFd));
         RefreshTimingForClock();
     }
