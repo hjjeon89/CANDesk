@@ -88,6 +88,36 @@ public sealed class CandeskXmlParserTests
         Assert.Empty(document.Assignments);
     }
 
+    [Fact]
+    public async Task ParseAsync_DecodesFourMotorolaCellVoltagesWithinEightBytes()
+    {
+        const string xml = """
+            <DBCData>
+              <CanFrame bmsid="0x532" name="BMS_532" DLC="8">
+                <signal name="Cell1" startbit="7" length="16" byteorder="Motorola" factor="0.001" unit="V" />
+                <signal name="Cell2" startbit="23" length="16" byteorder="Motorola" factor="0.001" unit="V" />
+                <signal name="Cell3" startbit="39" length="16" byteorder="Motorola" factor="0.001" unit="V" />
+                <signal name="Cell4" startbit="55" length="16" byteorder="Motorola" factor="0.001" unit="V" />
+              </CanFrame>
+            </DBCData>
+            """;
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var database = await new CandeskXmlParser().ParseAsync(input);
+        byte[] payload = [0x08, 0x98, 0x08, 0xFC, 0x09, 0x60, 0x09, 0xC4];
+
+        var decoded = new SignalDecoder(database).Decode(CanFrame.Create(0x532, payload));
+
+        Assert.Equal(new[] { 2200d, 2300d, 2400d, 2500d }, decoded.Select(signal => signal.RawValue));
+        var encoded = new byte[8];
+        var message = Assert.Single(database.Messages);
+        for (var index = 0; index < message.Signals.Count; index++)
+        {
+            Assert.Equal(2.2 + index * 0.1, decoded[index].PhysicalValue, precision: 9);
+            SignalEncoder.Encode(encoded, message.Signals[index], decoded[index].PhysicalValue);
+        }
+        Assert.Equal(payload, encoded);
+    }
+
     [Theory]
     [InlineData("<unrelated />")]
     [InlineData("<DBCData><CanFrame bmsid='0x60000123' name='Bad' DLC='8' /></DBCData>")]
