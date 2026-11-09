@@ -36,19 +36,30 @@ public sealed class CandeskXmlParser : IMessageDatabaseParser
 
         var messages = new List<DbcMessage>();
         var assignments = new Dictionary<uint, MessageNodeAssignment>();
-        foreach (var messageElement in root.Elements(legacy ? "CanFrame" : "message"))
+        var messageElements = legacy
+            ? root.Elements().Where(element => element.Name == "CanFrame" || element.Name == "CanFrameTx")
+            : root.Elements("message");
+        foreach (var messageElement in messageElements)
         {
             var rawId = ParseUInt(messageElement.Attribute(legacy ? "bmsid" : "id")?.Value);
             if (legacy && (rawId & 0x6000_0000u) != 0)
                 throw new FormatException($"Invalid CAN ID: 0x{rawId:X}.");
             var canId = legacy ? rawId & 0x1FFF_FFFFu : rawId;
             var signals = messageElement.Elements("signal").Select(signal => ParseSignal(signal, legacy)).ToArray();
+            var periodMs = ParseNullableInt(messageElement.Attribute(legacy ? "Tick" : "periodMs")?.Value) ?? 0;
+            if (periodMs < 0) throw new FormatException("Message period must not be negative.");
             messages.Add(new DbcMessage(
                 canId,
                 Require(messageElement.Attribute("name")?.Value, "message name"),
                 byte.Parse(Require(messageElement.Attribute(legacy ? "DLC" : "dlc")?.Value, "message dlc"), CultureInfo.InvariantCulture),
                 signals,
-                legacy ? rawId > 0x7FFu : bool.Parse(messageElement.Attribute("extended")?.Value ?? "false")));
+                legacy ? rawId > 0x7FFu : bool.Parse(messageElement.Attribute("extended")?.Value ?? "false"))
+            {
+                MsgType = legacy && messageElement.Name == "CanFrameTx"
+                    ? "TX"
+                    : messageElement.Attribute("msgtype")?.Value ?? "RX",
+                PeriodMs = periodMs
+            });
 
             var transmitter = messageElement.Attribute("tx")?.Value;
             var receivers = messageElement.Element("rx")?.Elements("node")
@@ -152,6 +163,8 @@ public sealed class CandeskXmlWriter : IMessageDatabaseWriter
         new XAttribute("name", message.Name),
         new XAttribute("dlc", message.Dlc),
         new XAttribute("extended", message.IsExtended),
+        message.MsgType == "RX" ? null : new XAttribute("msgtype", message.MsgType),
+        message.PeriodMs == 0 ? null : new XAttribute("periodMs", message.PeriodMs),
         assignment.TransmitterNode is null ? null : new XAttribute("tx", assignment.TransmitterNode),
         assignment.ReceiverNodes.Count == 0
             ? null

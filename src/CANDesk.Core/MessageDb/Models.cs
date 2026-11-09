@@ -9,7 +9,11 @@ public enum MessageDbFormat { Dbc, CandeskXml, CustomerCsv, BevCan }
 public sealed record DbcSignal(string Name, int StartBit, int BitLength, ByteOrder ByteOrder, bool IsSigned,
     double Factor = 1, double Offset = 0, double? Minimum = null, double? Maximum = null, string? Unit = null,
     MultiplexorRole MultiplexorRole = MultiplexorRole.None, int? MultiplexValue = null);
-public sealed record DbcMessage(uint CanId, string Name, byte Dlc, IReadOnlyList<DbcSignal> Signals, bool IsExtended = false);
+public sealed record DbcMessage(uint CanId, string Name, byte Dlc, IReadOnlyList<DbcSignal> Signals, bool IsExtended = false)
+{
+    public string MsgType { get; init; } = "RX";
+    public int PeriodMs { get; init; }
+}
 public sealed record CanNode(string Name);
 public sealed record MessageNodeAssignment(string? TransmitterNode, IReadOnlySet<string> ReceiverNodes);
 public sealed record DecodedSignal(uint CanId, string MessageName, string SignalName, double RawValue, double PhysicalValue,

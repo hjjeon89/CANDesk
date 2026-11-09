@@ -545,7 +545,7 @@ public sealed partial class TransmitPanelViewModel : ObservableObject
     public TxJobRow AddJobFromMessage(DbcMessage message)
     {
         var zeroPayload = string.Join(' ', Enumerable.Repeat("00", message.Dlc));
-        var job = new TxJobRow($"0x{message.CanId:X3}", message.Name, "0", message.Dlc.ToString(), zeroPayload, false, false, false, message.IsExtended)
+        var job = new TxJobRow($"0x{message.CanId:X3}", message.Name, message.PeriodMs.ToString(), message.Dlc.ToString(), zeroPayload, false, false, false, message.IsExtended)
         {
             Message = message
         };

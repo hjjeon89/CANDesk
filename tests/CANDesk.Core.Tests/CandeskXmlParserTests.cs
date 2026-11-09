@@ -38,6 +38,13 @@ public sealed class CandeskXmlParserTests
 
         Assert.Equal(messageCount, database.Messages.Count);
         Assert.Equal(signalCount, database.Messages.Sum(message => message.Signals.Count));
+        if (filename == "VolvoCan_4.xml")
+        {
+            Assert.True(database.TryGetMessage(0x0CFFEEC3, out var transmitMessage));
+            Assert.Equal("TX", transmitMessage.MsgType);
+            Assert.All(database.Messages.Where(message => message.CanId != transmitMessage.CanId),
+                message => Assert.Equal("RX", message.MsgType));
+        }
         Assert.All(database.Messages, message =>
         {
             Assert.InRange(message.CanId, 0u, 0x1FFF_FFFFu);
@@ -58,22 +65,27 @@ public sealed class CandeskXmlParserTests
     }
 
     [Theory]
-    [InlineData("0x123", 0x123u, false)]
-    [InlineData("291", 0x123u, false)]
-    [InlineData("0x80000123", 0x123u, true)]
-    [InlineData("0x1F020000", 0x1F020000u, true)]
-    public async Task ParseDocumentAsync_ReadsDbcDataIdsAndSignalAttributes(string id, uint expectedId, bool extended)
+    [InlineData("0x123", 0x123u, false, "CanFrame", "", "RX")]
+    [InlineData("291", 0x123u, false, "CanFrame", "RX", "RX")]
+    [InlineData("0x80000123", 0x123u, true, "CanFrame", "TX", "TX")]
+    [InlineData("0x1F020000", 0x1F020000u, true, "CanFrame", "", "RX")]
+    [InlineData("0x123", 0x123u, false, "CanFrameTx", "", "TX")]
+    [InlineData("0x80000123", 0x123u, true, "CanFrameTx", "RX", "TX")]
+    [InlineData("0x1F020000", 0x1F020000u, true, "CanFrameTx", "TX", "TX")]
+    public async Task ParseDocumentAsync_ReadsDbcDataIdsAndSignalAttributes(
+        string id, uint expectedId, bool extended, string elementName, string msgType, string expectedMsgType)
     {
         var xml = $"""
             <DBCData>
-              <CanFrame bmsid="{id}" name="Status" DLC="8">
+              <{elementName} bmsid="{id}" name="Status" DLC="8" msgtype="{msgType}">
                 <signal name="Temperature" startbit="7" length="16" byteorder="Motorola"
                         valuetype="Signed" factor="0.1" offset="-40" min="-50" max="150" unit="C" />
                 <signal name="Counter" startbit="16" length="8" min="0" max="0" />
-              </CanFrame>
-              <sequence><CanFrame bmsid="{id}" name="Repeated" DLC="8" /></sequence>
+              </{elementName}>
+              <sequence><{elementName} bmsid="{id}" name="Repeated" DLC="8" /></sequence>
             </DBCData>
             """;
+        if (msgType.Length == 0) xml = xml.Replace(" msgtype=\"\"", string.Empty);
         await using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
 
         var document = await new CandeskXmlParser().ParseDocumentAsync(input);
@@ -86,6 +98,40 @@ public sealed class CandeskXmlParserTests
         Assert.Equal(new DbcSignal("Counter", 16, 8, ByteOrder.Intel, false), message.Signals[1]);
         Assert.Empty(document.Nodes);
         Assert.Empty(document.Assignments);
+        Assert.Equal(expectedMsgType, message.MsgType);
+
+        var editable = new EditableMessageDatabase(document.Database, document.Nodes, document.Assignments);
+        editable.UpdateMessage(expectedId, new MessageEdit(Name: "Renamed"));
+        await using var saved = new MemoryStream();
+        await new CandeskXmlWriter().WriteAsync(editable.Snapshot, saved);
+        saved.Position = 0;
+        var reopened = await new CandeskXmlParser().ParseAsync(saved);
+        Assert.Equal(expectedMsgType, Assert.Single(reopened.Messages).MsgType);
+    }
+
+    [Theory]
+    [InlineData("CanFrame", null, 0)]
+    [InlineData("CanFrame", "", 0)]
+    [InlineData("CanFrame", "0", 0)]
+    [InlineData("CanFrame", "120", 120)]
+    [InlineData("CanFrameTx", null, 0)]
+    [InlineData("CanFrameTx", "0", 0)]
+    [InlineData("CanFrameTx", "100", 100)]
+    public async Task ParseThenSave_PreservesLegacyTickAsPeriod(string elementName, string? tick, int expectedPeriodMs)
+    {
+        var tickAttribute = tick is null ? string.Empty : $" Tick=\"{tick}\"";
+        var xml = $"<DBCData><{elementName} bmsid='0x123' name='Status' DLC='8'{tickAttribute} /></DBCData>";
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        var database = await new CandeskXmlParser().ParseAsync(input);
+        Assert.Equal(expectedPeriodMs, Assert.Single(database.Messages).PeriodMs);
+
+        var editable = new EditableMessageDatabase(database);
+        editable.UpdateMessage(0x123, new MessageEdit(Name: "Renamed"));
+        await using var saved = new MemoryStream();
+        await new CandeskXmlWriter().WriteAsync(editable.Snapshot, saved);
+        saved.Position = 0;
+        var reopened = await new CandeskXmlParser().ParseAsync(saved);
+        Assert.Equal(expectedPeriodMs, Assert.Single(reopened.Messages).PeriodMs);
     }
 
     [Fact]
@@ -120,8 +166,13 @@ public sealed class CandeskXmlParserTests
 
     [Theory]
     [InlineData("<unrelated />")]
+    [InlineData("<DBCData><CanFrame bmsid='0x123' name='Bad' DLC='8' Tick='invalid' /></DBCData>")]
+    [InlineData("<DBCData><CanFrameTx bmsid='0x123' name='Bad' DLC='8' Tick='-1' /></DBCData>")]
+    [InlineData("<candesk><message id='0x123' name='Bad' dlc='8' periodMs='-1' /></candesk>")]
     [InlineData("<DBCData><CanFrame bmsid='0x60000123' name='Bad' DLC='8' /></DBCData>")]
     [InlineData("<DBCData><CanFrame name='Bad' DLC='8' /></DBCData>")]
+    [InlineData("<DBCData><CanFrameTx bmsid='0x60000123' name='Bad' DLC='8' /></DBCData>")]
+    [InlineData("<DBCData><CanFrameTx name='Bad' DLC='8' /></DBCData>")]
     [InlineData("<DBCData><CanFrame bmsid='0x123' name='Bad' DLC='8'><signal name='Bad' startbit='0' length='8' valuetype='Float' /></CanFrame></DBCData>")]
     public async Task ParseAsync_RejectsUnsupportedOrIncompleteXml(string xml)
     {
