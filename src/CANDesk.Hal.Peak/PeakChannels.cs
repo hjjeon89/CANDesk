@@ -2,14 +2,19 @@ using CANDesk.Hal;
 
 namespace CANDesk.Hal.Peak;
 
-/// <summary>Known PCAN-USB channel handles (<c>TPCANHandle</c> values from PCANBasic.h). Only the
-/// USB range is wired up for v1; PCI/ISA/LAN channels are a documented extension point (§9).</summary>
+/// <summary>PCAN-USB and PCAN-PCI channel handles from PCANBasic.h.</summary>
 internal static class PeakChannels
 {
-    public static readonly IReadOnlyList<(ushort Handle, string Name)> UsbChannels =
+    public static readonly IReadOnlyList<(ushort Handle, string Name)> Channels =
     [
         (0x51, "PCAN-USB 1"), (0x52, "PCAN-USB 2"), (0x53, "PCAN-USB 3"), (0x54, "PCAN-USB 4"),
         (0x55, "PCAN-USB 5"), (0x56, "PCAN-USB 6"), (0x57, "PCAN-USB 7"), (0x58, "PCAN-USB 8"),
+        (0x509, "PCAN-USB 9"), (0x50A, "PCAN-USB 10"), (0x50B, "PCAN-USB 11"), (0x50C, "PCAN-USB 12"),
+        (0x50D, "PCAN-USB 13"), (0x50E, "PCAN-USB 14"), (0x50F, "PCAN-USB 15"), (0x510, "PCAN-USB 16"),
+        (0x41, "PCAN-PCI 1"), (0x42, "PCAN-PCI 2"), (0x43, "PCAN-PCI 3"), (0x44, "PCAN-PCI 4"),
+        (0x45, "PCAN-PCI 5"), (0x46, "PCAN-PCI 6"), (0x47, "PCAN-PCI 7"), (0x48, "PCAN-PCI 8"),
+        (0x409, "PCAN-PCI 9"), (0x40A, "PCAN-PCI 10"), (0x40B, "PCAN-PCI 11"), (0x40C, "PCAN-PCI 12"),
+        (0x40D, "PCAN-PCI 13"), (0x40E, "PCAN-PCI 14"), (0x40F, "PCAN-PCI 15"), (0x410, "PCAN-PCI 16"),
     ];
 }
 

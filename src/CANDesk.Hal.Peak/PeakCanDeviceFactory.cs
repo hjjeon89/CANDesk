@@ -4,7 +4,7 @@ using CANDesk.Hal;
 namespace CANDesk.Hal.Peak;
 
 /// <summary>
-/// Discovers PEAK PCAN-USB channels via PCAN-Basic. If <c>PCANBasic.dll</c> is not installed,
+/// Discovers PEAK PCAN-USB and PCAN-PCI channels via PCAN-Basic. If <c>PCANBasic.dll</c> is not installed,
 /// <see cref="EnumerateAsync"/> returns an empty list instead of throwing, so the vendor is simply
 /// absent from the UI rather than crashing the app (Project_Architecture.md §11: "미설치 시 해당
 /// 벤더만 비활성화, 앱 크래시 방지").
@@ -36,15 +36,7 @@ public sealed class PeakCanDeviceFactory : ICanDeviceFactory, ICanDeviceFactoryD
             if (result != PCanBasicNative.StatusOk)
                 throw new InvalidOperationException($"PCAN attached-channel query failed: 0x{result:X}.");
 
-            foreach (var (handle, name) in PeakChannels.UsbChannels)
-            {
-                var channel = channels.FirstOrDefault(channel => channel.ChannelHandle == handle);
-                if (channel.ChannelCondition == 0) continue;
-                var supportsFd = (channel.DeviceFeatures & PCanBasicNative.FeatureFdCapable) != 0;
-                descriptors.Add(new CanDeviceDescriptor(Vendor, handle.ToString("X"), $"{name} (ID: {channel.DeviceId:X8})",
-                    [$"Channel {handle - 0x50}", name], SupportsCanFd: supportsFd,
-                    ClockFrequencyHz: supportsFd ? PeakBitTiming.FdClockHz : null));
-            }
+            descriptors.AddRange(DescribeChannels(channels));
         }
         catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException)
         {
@@ -52,6 +44,22 @@ public sealed class PeakCanDeviceFactory : ICanDeviceFactory, ICanDeviceFactoryD
         }
 
         return Task.FromResult<IReadOnlyList<CanDeviceDescriptor>>(descriptors);
+    }
+
+    internal static IReadOnlyList<CanDeviceDescriptor> DescribeChannels(PCanBasicNative.TPCANChannelInformation[] channels)
+    {
+        var descriptors = new List<CanDeviceDescriptor>();
+        foreach (var (handle, name) in PeakChannels.Channels)
+        {
+            var channel = channels.FirstOrDefault(channel => channel.ChannelHandle == handle);
+            if (channel.ChannelCondition == 0) continue;
+            var supportsFd = (channel.DeviceFeatures & PCanBasicNative.FeatureFdCapable) != 0;
+            var number = handle <= 0xFF ? handle & 0xF : handle & 0xFF;
+            descriptors.Add(new CanDeviceDescriptor("PEAK", handle.ToString("X"), $"{name} (ID: {channel.DeviceId:X8})",
+                [$"Channel {number}", name], SupportsCanFd: supportsFd,
+                ClockFrequencyHz: supportsFd ? PeakBitTiming.FdClockHz : null));
+        }
+        return descriptors;
     }
 
     public Task<ICanDevice> CreateAsync(string deviceId, string channelName, CancellationToken cancellationToken = default)

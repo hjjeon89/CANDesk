@@ -9,6 +9,43 @@ namespace CANDesk.Core.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class PeakCanFdTests
 {
+    [Theory]
+    [InlineData(0x41, "PCAN-PCI", 1, false)]
+    [InlineData(0x48, "PCAN-PCI", 8, true)]
+    [InlineData(0x409, "PCAN-PCI", 9, false)]
+    [InlineData(0x410, "PCAN-PCI", 16, true)]
+    [InlineData(0x51, "PCAN-USB", 1, true)]
+    [InlineData(0x58, "PCAN-USB", 8, false)]
+    [InlineData(0x509, "PCAN-USB", 9, true)]
+    [InlineData(0x510, "PCAN-USB", 16, false)]
+    public void Discovery_IncludesPciAndUsbChannelsWithoutRequiringChannelOne(int handle, string family, int number, bool fd)
+    {
+        var descriptors = PeakCanDeviceFactory.DescribeChannels([
+            new() { ChannelHandle = (ushort)handle, DeviceId = 0x1234ABCD, ChannelCondition = 1,
+                DeviceFeatures = fd ? PCanBasicNative.FeatureFdCapable : 0 }]);
+
+        var descriptor = Assert.Single(descriptors);
+        Assert.Equal("PEAK", descriptor.Vendor);
+        Assert.Equal(handle.ToString("X"), descriptor.DeviceId);
+        Assert.Equal($"{family} {number} (ID: 1234ABCD)", descriptor.DisplayName);
+        Assert.Equal(new[] { $"Channel {number}", $"{family} {number}" }, descriptor.Channels);
+        Assert.Equal(fd, descriptor.SupportsCanFd);
+        Assert.Equal(fd ? (int?)PeakBitTiming.FdClockHz : null, descriptor.ClockFrequencyHz);
+    }
+
+    [Fact]
+    public void Discovery_SkipsUnavailableChannelsAndKeepsMixedPciAndUsbDevices()
+    {
+        var descriptors = PeakCanDeviceFactory.DescribeChannels([
+            new() { ChannelHandle = 0x41, ChannelCondition = 0 },
+            new() { ChannelHandle = 0x42, ChannelCondition = 1 },
+            new() { ChannelHandle = 0x51, ChannelCondition = 3 }]);
+
+        Assert.Equal(2, descriptors.Count);
+        Assert.Contains(descriptors, descriptor => descriptor.DeviceId == "42");
+        Assert.Contains(descriptors, descriptor => descriptor.DeviceId == "51");
+    }
+
     [Fact]
     public void NativeLayout_MatchesPcanHeaders()
     {
