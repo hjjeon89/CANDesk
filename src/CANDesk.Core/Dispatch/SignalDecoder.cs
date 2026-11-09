@@ -7,14 +7,17 @@ public sealed class SignalDecoder(IMessageDatabase database)
 {
     public IReadOnlyList<DecodedSignal> Decode(in CanFrame frame)
     {
-        if (!database.TryGetMessage(frame.Id, out var message)) return [];
+        if ((frame.Flags & (CanFrameFlags.RemoteTransmissionRequest | CanFrameFlags.ErrorFrame)) != 0
+            || !database.TryGetMessage(frame.Id, out var message)) return [];
         var decoded = new List<DecodedSignal>(message.Signals.Count);
         int? muxValue = null;
-        foreach (var signal in message.Signals.Where(signal => signal.MultiplexorRole == MultiplexorRole.Switch))
-            muxValue = (int)ReadRaw(frame.PayloadSpan, signal);
+        foreach (var signal in message.Signals)
+            if (signal.MultiplexorRole == MultiplexorRole.Switch && FitsPayload(signal, frame.PayloadLength))
+                muxValue = (int)ReadRaw(frame.PayloadSpan, signal);
         foreach (var signal in message.Signals)
         {
             if (signal.MultiplexorRole == MultiplexorRole.Value && signal.MultiplexValue != muxValue) continue;
+            if (!FitsPayload(signal, frame.PayloadLength)) continue;
             var raw = ReadRaw(frame.PayloadSpan, signal);
             if (signal.IsSigned) raw = SignExtend(raw, signal.BitLength);
             decoded.Add(new(frame.Id, message.Name, signal.Name, raw, raw * signal.Factor + signal.Offset, signal.Unit, frame.SystemTime));
@@ -29,6 +32,16 @@ public sealed class SignalDecoder(IMessageDatabase database)
         var raw = ReadRaw(payload, signal);
         if (signal.IsSigned) raw = SignExtend(raw, signal.BitLength);
         return raw * signal.Factor + signal.Offset;
+    }
+
+    // Incomplete or invalid signal layouts must not abort live reception for the other signals.
+    private static bool FitsPayload(DbcSignal signal, int payloadLength)
+    {
+        if (signal.StartBit < 0 || signal.BitLength is < 1 or > 64 || signal.StartBit / 8 >= payloadLength) return false;
+        var lastBit = signal.ByteOrder == ByteOrder.Intel
+            ? (long)signal.StartBit + signal.BitLength - 1
+            : MotorolaBit(signal.StartBit, signal.BitLength - 1);
+        return lastBit / 8 < payloadLength;
     }
 
     private static long ReadRaw(ReadOnlySpan<byte> data, DbcSignal signal)
