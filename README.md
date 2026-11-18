@@ -4,6 +4,12 @@
 
 ### 변경 이력 (Fixes & Changes)
 
+#### 2026-11-18 — Vector CAN FD 및 장치 자동 검색
+
+- **Vector CAN FD:** 지원 채널에서 ISO CAN FD 연결과 최대 64바이트 송수신, BRS, 확장 ID 및 하드웨어 수신 타임스탬프를 지원합니다. FD 연결에서도 Classic CAN 프레임을 송수신할 수 있습니다.
+- **VN1630/VN1640 자동 검색:** Vector XL 드라이버가 제공하는 CAN 채널을 직접 검색하고 채널 이름과 시리얼 번호를 표시합니다. 기존 `xlCanGP` 애플리케이션 매핑에 등록된 채널만 검색하던 제한을 제거했습니다. VN1640A에서 CAN 채널 1~4 검색과 FD 지원 여부를 확인했습니다.
+- **타이밍 설정 및 검증:** Nominal/Data 프리셋과 Raw 세그먼트 입력을 지원하며, Raw 미리보기도 Vector 제한에 맞춰 계산합니다. 잘못된 FD 플래그·페이로드 및 타이밍을 검사하고, 다른 애플리케이션이 채널을 사용하는 경우 활성 ISO CAN FD 설정이 요청한 설정과 일치하는지 확인합니다.
+
 #### 1.1.0 (2026-10-29) — CAN 장치 선택
 
 - **장치별 연결:** 연결 설정에 **DEVICE** 선택란을 추가했습니다. **VENDOR → DEVICE → CHANNEL → Connect** 순서로 선택해 같은 타입의 CAN 모듈이 여러 개 연결되어 있어도 원하는 장치에 연결할 수 있습니다. 채널 목록은 선택한 장치가 제공하는 채널로 갱신됩니다.
@@ -103,7 +109,7 @@ Eliminate vendor lock-in with a unified interface: CANDesk integrates multi-vend
 ### Key Highlights
 - **Multi-Vendor Hardware Abstraction:** Modular driver architecture supporting PEAK-System, Vector, Kvaser, and CANable (candleLight firmware) without code refactoring.
 - **CAN ↔ CAN-FD, No Hassle:** Switch between Classic CAN and CAN-FD freely before connecting — no more "built it as CAN-FD when it should've been Classic" rework. Baudrate/Sample Point are chosen from PCAN-View-style preset tables by default, with manual entry always available.
-  - Vector CAN channels (including VN1630/VN1640) are discovered directly from the XL driver, with channel names and serial numbers; application-channel mapping is not required. ISO CAN FD is available on capable channels. Select **CAN FD**, then set nominal and data timing before connecting. FD timing uses an 80 MHz clock and supports presets or raw segments; data bitrate must be at least the nominal bitrate and 25 kbps. Classic frames can also be sent on an FD connection. If another application owns the channel, its ISO CAN FD mode, bitrates, and sample points must match.
+  - Vector CAN channels, including VN1630/VN1640, are discovered directly from the XL driver with channel names and serial numbers. Capable channels support ISO CAN FD, up to 64 payload bytes, BRS, and independent nominal/data timing; application-channel mapping is not required.
 - **Multi-Format Message Database:** Load and decode `.dbc`, an in-house `.xml` schema, and vendor-varying customer `.csv` files, all resolved into one common signal model.
 - **Message Database Editor:** Edit loaded messages/signals directly in the GUI, including adding arbitrary new messages and signals — not just read-only viewing.
 - **RX Monitor vs. Trace:** A PCAN-View-style Receive table where each CAN ID updates in a single row, separate from a timestamp-ordered Trace log that appends every frame — each with its own independent filter.
@@ -128,6 +134,7 @@ Eliminate vendor lock-in with a unified interface: CANDesk integrates multi-vend
   * 연결 직전까지 Classic CAN ↔ CAN-FD 모드를 자유롭게 전환 — "만들고 보니 FD로 잡아야 해서 다시 손보는" 불편 제거
   * PCAN-View 스타일의 표준 Baudrate/Sample Point 프리셋 테이블에서 선택하는 것을 기본으로 하되, 필요 시 값을 직접 입력 가능
   * CAN-FD 선택 시 Arbitration(Nominal)과 Data Phase 비트레이트를 별도로 구성
+  * Vector 지원 채널에서 ISO CAN FD 최대 64바이트 송수신, BRS 및 확장 ID 지원
 
 * **멀티포맷 메시지 DB 파싱 및 편집**
   * `.dbc`(표준), `.xml`(팀 자체 정의 포맷), `.csv`(고객사별 다양한 양식) 로드 및 공통 신호 모델로 자동 수렴
@@ -148,6 +155,34 @@ Eliminate vendor lock-in with a unified interface: CANDesk integrates multi-vend
 * **고성능 트레이스 및 로깅**
   * 마이크로초 단위 하드웨어 타임스탬프 기반 실시간 프레임 트레이스
   * 대용량 패킷 버퍼링 및 CSV, BLF, ASC 포맷 내보내기/불러오기 지원
+
+---
+
+### Vector 연결 (Classic CAN / CAN FD)
+
+Vector 하드웨어 드라이버와 64비트 XL Driver Library가 필요합니다. `vxlapi64.dll` 배치 방법은 [벤더 런타임 안내](src/CANDesk.App/vendor/README.md)를 참고하세요.
+
+1. Vector 장치를 연결하고 **VENDOR → Vector**를 선택합니다. 연결 후 목록을 갱신하려면 **Refresh**를 누릅니다.
+2. **DEVICE**에서 채널 이름과 시리얼 번호를 확인하고 **CHANNEL**을 선택합니다. 예: `VN1640A Channel 1 (S/N 123456)`.
+3. **Classic CAN** 또는 **CAN FD**를 선택하고 Nominal 비트레이트와 Sample Point를 설정합니다. CAN FD에서는 Data Phase 타이밍도 설정합니다.
+4. **Connect**로 연결합니다. 송신할 프레임의 **FD** 및 **BRS** 옵션을 필요한 형식에 맞게 선택합니다.
+
+CAN 채널은 XL 드라이버에서 직접 검색하므로 Vector Hardware Config의 `xlCanGP` 등 애플리케이션 채널에 별도로 매핑할 필요가 없습니다. 드라이버가 제공하는 Virtual CAN 채널도 목록에 표시될 수 있습니다. FD 지원 여부는 각 채널의 드라이버 기능 정보로 확인하며, 지원하지 않는 채널의 FD 연결은 오류로 알립니다.
+
+Vector CAN FD 타이밍은 **80 MHz** 기준입니다. 프리셋 또는 Raw 세그먼트를 사용할 수 있으며, Data 비트레이트는 Nominal 이상이면서 최소 **25 kbps**여야 합니다. Raw 입력 범위는 다음과 같습니다.
+
+| 항목 | Nominal | Data |
+| --- | --- | --- |
+| TSeg1 / TSeg2 | 2~254 | 2~126 |
+| SJW | 1~128, TSeg2 이하 | 1~64, TSeg2 이하 |
+
+BRP는 양의 정수이며, 입력한 BRP와 세그먼트에서 비트레이트를 계산합니다. FD 프레임에는 RTR을 사용할 수 없으며, BRS는 FD 프레임에서만 사용할 수 있습니다. 8바이트를 초과하는 페이로드는 FD 프레임으로 보내야 합니다. FD DLC에 맞지 않는 길이는 다음 전송 길이까지 0으로 패딩됩니다.
+
+다른 애플리케이션이 채널의 초기화 권한을 보유한 경우, 활성 ISO CAN FD 모드·Nominal/Data 비트레이트·Sample Point가 요청 설정과 맞아야 연결됩니다. 일치하지 않으면 해당 애플리케이션의 설정에 맞추거나 채널을 해제한 뒤 다시 연결합니다.
+
+장치가 표시되지 않으면 Vector Hardware Manager에서 인식 상태를 확인하고 **Refresh**를 누릅니다. 이전 CANDesk 빌드를 실행 중이라면 앱을 종료한 뒤 최신 빌드 또는 설치 스크립트로 업데이트하세요. 검색 실패 시 표시되는 XL 드라이버 진단 정보도 확인할 수 있습니다.
+
+현재 실장비 확인 범위는 **VN1640A CAN 채널 1~4 검색 및 FD 지원 정보 조회**입니다. 실제 버스에서의 CAN FD 송수신 검증은 별도로 필요합니다.
 
 ---
 
