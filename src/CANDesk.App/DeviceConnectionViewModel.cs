@@ -1,4 +1,5 @@
 using CANDesk.Hal;
+using CANDesk.Hal.Vector;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -245,7 +246,7 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     private void SyncNominalRawFromPreset(BitTimingSetting preset)
     {
-        if (!TryCalculate(preset, out var segments)) return;
+        if (!TryCalculate(preset, dataPhase: false, out var segments)) return;
         NominalPrescaler = segments.Prescaler.ToString();
         NominalTseg1 = segments.Tseg1.ToString();
         NominalTseg2 = segments.Tseg2.ToString();
@@ -254,21 +255,23 @@ public sealed partial class DeviceConnectionViewModel : ObservableObject
 
     private void SyncDataRawFromPreset(BitTimingSetting preset)
     {
-        if (!TryCalculate(preset, out var segments)) return;
+        if (!TryCalculate(preset, dataPhase: true, out var segments)) return;
         DataPrescaler = segments.Prescaler.ToString();
         DataTseg1 = segments.Tseg1.ToString();
         DataTseg2 = segments.Tseg2.ToString();
         DataSjw = segments.Sjw.ToString();
     }
 
-    private bool TryCalculate(BitTimingSetting preset, out RawBitTimingSegments segments)
+    private bool TryCalculate(BitTimingSetting preset, bool dataPhase, out RawBitTimingSegments segments)
     {
         try
         {
-            segments = _timingCalculator.Calculate(preset, TimingClockHz);
+            segments = SelectedVendor == "Vector" && IsFdMode
+                ? VectorBitTiming.Calculate(preset, dataPhase)
+                : _timingCalculator.Calculate(preset, TimingClockHz);
             return true;
         }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
             // The preset cannot be represented at the reference clock; leave the existing raw fields as-is.
             segments = default!;

@@ -7,8 +7,8 @@ namespace CANDesk.Hal.Vector;
 
 /// <summary>
 /// <see cref="ICanDevice"/> adapter over one Vector XL channel (identified by its channel mask,
-/// resolved by <see cref="VectorCanDeviceFactory"/> via <c>xlGetApplConfig</c>/
-/// <c>xlGetChannelMask</c>). Classic CAN only; see <see cref="VectorXlNative"/> remarks.
+/// resolved by <see cref="VectorCanDeviceFactory"/> via <c>xlGetDriverConfig</c>).
+/// Supports Classic CAN and ISO CAN FD.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class VectorCanDevice : ICanDevice
@@ -22,7 +22,8 @@ internal sealed class VectorCanDevice : ICanDevice
     private IDisposable? _driverScope;
     private AutoResetEvent? _notification;
     private Task? _readLoop;
-    private int _portHandle;
+    private int _portHandle = -1;
+    private bool _isCanFd;
     private long _dropped;
     private int _disposeState;
     // xlEvent.TimeStamp is nanoseconds since an arbitrary driver epoch, not wall-clock time.
@@ -55,17 +56,27 @@ internal sealed class VectorCanDevice : ICanDevice
         }
 
         config.Validate();
-        if (config.Mode == CanBusMode.Fd)
-        {
-            throw new NotSupportedException("Vector CAN-FD support is not implemented yet (Classic CAN only in this release).");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        var fdConfig = config.IsCanFd ? VectorBitTiming.ToFdConfiguration(config) : default;
 
         SetStatus(CanDeviceStatus.Opening);
-        var driverScope = VectorDriverScope.Acquire();
+        IDisposable? driverScope = null;
         try
         {
+            driverScope = VectorDriverScope.Acquire();
+            if (config.IsCanFd)
+            {
+                var queryStatus = VectorXlNative.GetDriverConfig(out var driverConfig);
+                if (queryStatus != 0)
+                    throw new InvalidOperationException($"xlGetDriverConfig failed: XL status {queryStatus}.");
+                if (!VectorXlNative.SupportsIsoCanFd(driverConfig, _channelMask))
+                    throw new NotSupportedException("The selected Vector channel does not support ISO CAN FD.");
+            }
+
+            var permissionMask = _channelMask;
             var openStatus = VectorXlNative.OpenPort(out var portHandle, VectorXlNative.ApplicationName, _channelMask,
-                out var permissionMask, rxQueueSize: 8192, VectorXlNative.InterfaceVersionV3, VectorXlNative.BusTypeCan);
+                ref permissionMask, config.IsCanFd ? 524_288u : 8192u,
+                config.IsCanFd ? VectorXlNative.InterfaceVersionV4 : VectorXlNative.InterfaceVersionV3, VectorXlNative.BusTypeCan);
             if (openStatus != 0)
             {
                 throw new InvalidOperationException($"xlOpenPort failed for channel mask 0x{_channelMask:X}: XL status {openStatus}.");
@@ -78,11 +89,20 @@ internal sealed class VectorCanDevice : ICanDevice
             var initAccessMask = permissionMask & _channelMask;
             if (initAccessMask != 0)
             {
-                var bitrateStatus = VectorXlNative.CanSetChannelBitrate(portHandle, initAccessMask, (uint)config.Nominal.BitrateKbps * 1000u);
+                var bitrateStatus = config.IsCanFd
+                    ? VectorXlNative.CanFdSetConfiguration(portHandle, initAccessMask, fdConfig)
+                    : VectorXlNative.CanSetChannelBitrate(portHandle, initAccessMask, (uint)config.Nominal.BitrateKbps * 1000u);
                 if (bitrateStatus != 0)
                 {
-                    ErrorOccurred?.Invoke(this, new(CanErrorKind.Driver, $"xlCanSetChannelBitrate returned XL status {bitrateStatus}."));
+                    throw new InvalidOperationException($"{(config.IsCanFd ? "xlCanFdSetConfiguration" : "xlCanSetChannelBitrate")} returned XL status {bitrateStatus}.");
                 }
+            }
+            else if (config.IsCanFd)
+            {
+                var queryStatus = VectorXlNative.GetDriverConfig(out var activeConfig);
+                var channel = VectorXlNative.FindChannel(activeConfig, _channelMask);
+                if (queryStatus != 0 || channel is null || !VectorBitTiming.MatchesActiveConfiguration(channel.Value, fdConfig))
+                    throw new InvalidOperationException("Another application owns this Vector channel with different or unknown CAN FD timing. Match its ISO CAN FD settings or release the channel in that application.");
             }
 
             var activateStatus = VectorXlNative.ActivateChannel(portHandle, _channelMask, VectorXlNative.BusTypeCan, 0);
@@ -105,10 +125,18 @@ internal sealed class VectorCanDevice : ICanDevice
             // else: fall back to plain polling in the read loop below.
 
             _driverScope = driverScope;
+            _isCanFd = config.IsCanFd;
         }
         catch
         {
-            driverScope.Dispose();
+            if (_portHandle != -1)
+            {
+                VectorXlNative.ClosePort(_portHandle);
+                _portHandle = -1;
+            }
+            _notification?.Dispose();
+            _notification = null;
+            driverScope?.Dispose();
             SetStatus(CanDeviceStatus.Faulted);
             throw;
         }
@@ -139,8 +167,13 @@ internal sealed class VectorCanDevice : ICanDevice
         _sessionCancellation?.Dispose();
         _sessionCancellation = null;
 
-        VectorXlNative.DeactivateChannel(_portHandle, _channelMask);
-        VectorXlNative.ClosePort(_portHandle);
+        if (_portHandle != -1)
+        {
+            VectorXlNative.DeactivateChannel(_portHandle, _channelMask);
+            VectorXlNative.ClosePort(_portHandle);
+            _portHandle = -1;
+        }
+        _isCanFd = false;
         _notification?.Dispose();
         _notification = null;
         _driverScope?.Dispose();
@@ -150,15 +183,22 @@ internal sealed class VectorCanDevice : ICanDevice
     public ValueTask SendAsync(CanFrame frame, CancellationToken cancellationToken = default)
     {
         EnsureOpen();
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var id = frame.Id | (frame.Flags.HasFlag(CanFrameFlags.Extended) ? VectorXlNative.ExtendedMessageIdFlag : 0);
-        var flags = frame.Flags.HasFlag(CanFrameFlags.RemoteTransmissionRequest) ? VectorXlNative.CanMsgFlagRemoteFrame : (ushort)0;
-        var xlEvent = new VectorXlNative.XLevent { Tag = VectorXlNative.EventTagTransmitMsg };
-        VectorXlNative.WriteCanMsg(ref xlEvent, id, flags, frame.PayloadLength, frame.PayloadSpan);
+        if (_isCanFd)
+        {
+            var message = ToFdMessage(frame);
+            var fdStatus = VectorXlNative.CanTransmitEx(_portHandle, _channelMask, 1, out var sentCount, message);
+            if (fdStatus != 0 || sentCount != 1)
+                throw new InvalidOperationException($"xlCanTransmitEx failed for channel mask 0x{_channelMask:X}: XL status {fdStatus}, sent {sentCount}/1.");
+            return ValueTask.CompletedTask;
+        }
+
+        var xlEvent = ToClassicMessage(frame);
 
         var messageCount = 1u;
         var status = VectorXlNative.CanTransmit(_portHandle, _channelMask, ref messageCount, ref xlEvent);
-        if (status != 0)
+        if (status != 0 || messageCount != 1)
         {
             throw new InvalidOperationException($"xlCanTransmit failed for channel mask 0x{_channelMask:X}: XL status {status}.");
         }
@@ -213,12 +253,94 @@ internal sealed class VectorCanDevice : ICanDevice
                     break;
                 }
 
-                DrainReceiveQueue();
+                if (_isCanFd) DrainFdReceiveQueue();
+                else DrainReceiveQueue();
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
         }
+        catch (Exception exception)
+        {
+            SetStatus(CanDeviceStatus.Faulted);
+            ErrorOccurred?.Invoke(this, new(CanErrorKind.Driver, exception.Message, exception));
+        }
+    }
+
+    private void DrainFdReceiveQueue()
+    {
+        while (_sessionCancellation?.IsCancellationRequested == false)
+        {
+            var status = VectorXlNative.CanReceive(_portHandle, out var xlEvent);
+            if (status == VectorXlNative.QueueIsEmpty) return;
+            if (status != 0)
+                throw new InvalidOperationException($"xlCanReceive failed: XL status {status}.");
+
+            // TX_OK/TX_REQUEST are echoes; TxScheduler.FrameSent already reports transmission.
+            if (xlEvent.Tag != VectorXlNative.CanFdEventTagReceiveOk) continue;
+            if (xlEvent.Dlc > 15)
+            {
+                ErrorOccurred?.Invoke(this, new(CanErrorKind.Driver, $"xlCanReceive returned invalid DLC {xlEvent.Dlc}."));
+                continue;
+            }
+            _frames.Writer.TryWrite(ToCanFrame(xlEvent, _timeBaseUtc));
+        }
+    }
+
+    internal static VectorXlNative.XLevent ToClassicMessage(in CanFrame frame)
+    {
+        ValidateFrame(frame, allowFd: false);
+        var message = new VectorXlNative.XLevent { Tag = VectorXlNative.EventTagTransmitMsg };
+        var id = frame.Id | (frame.Flags.HasFlag(CanFrameFlags.Extended) ? VectorXlNative.ExtendedMessageIdFlag : 0);
+        var flags = frame.Flags.HasFlag(CanFrameFlags.RemoteTransmissionRequest) ? VectorXlNative.CanMsgFlagRemoteFrame : (ushort)0;
+        VectorXlNative.WriteCanMsg(ref message, id, flags, frame.PayloadLength, frame.PayloadSpan);
+        return message;
+    }
+
+    internal static unsafe VectorXlNative.XLcanTxEvent ToFdMessage(in CanFrame frame)
+    {
+        ValidateFrame(frame, allowFd: true);
+        var message = new VectorXlNative.XLcanTxEvent
+        {
+            Tag = VectorXlNative.CanFdEventTagTransmitMsg,
+            CanId = frame.Id | (frame.Flags.HasFlag(CanFrameFlags.Extended) ? VectorXlNative.ExtendedMessageIdFlag : 0),
+            MsgFlags = (frame.Flags.HasFlag(CanFrameFlags.Fd) ? VectorXlNative.CanFdMsgFlagEdl : 0)
+                | (frame.Flags.HasFlag(CanFrameFlags.BitRateSwitch) ? VectorXlNative.CanFdMsgFlagBrs : 0)
+                | (frame.Flags.HasFlag(CanFrameFlags.RemoteTransmissionRequest) ? VectorXlNative.CanFdMsgFlagRtr : 0),
+            Dlc = CanFrame.GetDlc(frame.PayloadLength)
+        };
+        frame.PayloadSpan.CopyTo(new Span<byte>(message.Data, 64));
+        return message;
+    }
+
+    internal static unsafe CanFrame ToCanFrame(in VectorXlNative.XLcanRxEvent message, DateTime timeBaseUtc)
+    {
+        if (message.Dlc > 15) throw new ArgumentOutOfRangeException(nameof(message), "Vector DLC must be 0-15.");
+        var flags = CanFrameFlags.None;
+        if ((message.CanId & VectorXlNative.ExtendedMessageIdFlag) != 0) flags |= CanFrameFlags.Extended;
+        if ((message.MsgFlags & VectorXlNative.CanFdMsgFlagEdl) != 0) flags |= CanFrameFlags.Fd;
+        if ((message.MsgFlags & VectorXlNative.CanFdMsgFlagBrs) != 0) flags |= CanFrameFlags.BitRateSwitch;
+        if ((message.MsgFlags & VectorXlNative.CanFdMsgFlagRtr) != 0) flags |= CanFrameFlags.RemoteTransmissionRequest;
+        if ((message.MsgFlags & VectorXlNative.CanFdRxMsgFlagErrorFrame) != 0) flags |= CanFrameFlags.ErrorFrame;
+        var length = flags.HasFlag(CanFrameFlags.Fd)
+            ? message.Dlc switch { <= 8 => message.Dlc, 9 => 12, 10 => 16, 11 => 20, 12 => 24, 13 => 32, 14 => 48, _ => 64 }
+            : Math.Min(message.Dlc, (byte)8);
+        fixed (byte* data = message.Data)
+            return CanFrame.Create(message.CanId & ~VectorXlNative.ExtendedMessageIdFlag,
+                new ReadOnlySpan<byte>(data, length), flags, message.TimeStamp / 1000,
+                timeBaseUtc.AddTicks(checked((long)(message.TimeStamp / 100))));
+    }
+
+    private static void ValidateFrame(in CanFrame frame, bool allowFd)
+    {
+        var fd = frame.Flags.HasFlag(CanFrameFlags.Fd);
+        var rtr = frame.Flags.HasFlag(CanFrameFlags.RemoteTransmissionRequest);
+        var brs = frame.Flags.HasFlag(CanFrameFlags.BitRateSwitch);
+        if ((!allowFd && fd) || frame.PayloadLength > 64 || (!fd && frame.PayloadLength > 8)
+            || (fd && rtr) || (brs && !fd) || frame.Flags.HasFlag(CanFrameFlags.ErrorFrame))
+            throw new ArgumentException("Invalid payload or flags for the selected Vector CAN mode.", nameof(frame));
+        if (frame.Id > (frame.Flags.HasFlag(CanFrameFlags.Extended) ? 0x1FFF_FFFFu : 0x7FFu))
+            throw new ArgumentException("CAN ID exceeds the selected frame format.", nameof(frame));
     }
 
     private void DrainReceiveQueue()

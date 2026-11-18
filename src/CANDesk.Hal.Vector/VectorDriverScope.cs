@@ -16,10 +16,12 @@ internal static class VectorDriverScope
     {
         lock (Gate)
         {
-            if (_refCount++ == 0)
+            if (_refCount == 0)
             {
-                VectorXlNative.OpenDriver();
+                var status = VectorXlNative.OpenDriver();
+                if (status != 0) throw new InvalidOperationException($"xlOpenDriver failed: XL status {status}.");
             }
+            _refCount++;
         }
 
         return new ReleaseScope();

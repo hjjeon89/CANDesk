@@ -1,35 +1,138 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 
 namespace CANDesk.Hal.Vector;
 
 /// <summary>
 /// Thin P/Invoke surface over Vector's XL Driver Library (<c>vxlapi.dll</c>/<c>vxlapi64.dll</c>),
-/// scoped to Classic CAN (legacy <c>XLevent</c> API, interface version 3) open/close/send/receive/
-/// reset. Struct field order and sizes follow the publicly documented XL Driver Library API and
-/// widely-referenced open-source bindings (e.g. python-can's vector interface); they were written
-/// without the vendor header in hand, so verify <see cref="XLevent"/>'s layout against the
-/// installed vxlapi.h before the first real hardware run. CAN-FD (interface version 4,
-/// <c>XLcanFdConf</c>/<c>XLcanTxEvent</c>/<c>XLcanRxEvent</c>) is intentionally out of scope for v1,
-/// matching Project_Architecture.md §11 ("1차 릴리스는 Classic CAN 우선").
-///
-/// Enumeration relies on <see cref="GetApplConfig"/> + <see cref="GetChannelMask"/> rather than
-/// parsing <c>XLdriverConfig</c> (a large, version-sensitive struct) — this is the same pattern
-/// Vector's own sample code uses for "application channel" integration, and requires the user to
-/// map a "CANDesk" application to physical channels once via the Vector Hardware Config utility.
+/// for Classic CAN (V3) and ISO CAN FD (V4). Layouts follow Vector's XL Driver Library
+/// Manual 26.30, sections 3.4 and 6.4–6.5.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static partial class VectorXlNative
 {
     private const string DllName = "vxlapi64.dll";
 
-    // Must exactly match the application name registered in Vector Hardware Config (Start Menu →
-    // Vector Hardware → Vector Hardware Config → Applications), since xlGetApplConfig looks it up
-    // by this exact string. "xlCanGP" is what this project's own Vector Hardware Config is set up
-    // with; rename here (and re-register in Vector Hardware Config) together if it ever changes.
-    public const string ApplicationName = "xlCanGP";
+    // Port label only; discovery reads hardware directly without application-channel mappings.
+    public const string ApplicationName = "CANDesk";
     public const uint BusTypeCan = 1;
+    public const uint BusActiveCapCan = 0x0001_0000;
     public const uint InterfaceVersionV3 = 3;
+    public const uint InterfaceVersionV4 = 4;
+    public const short QueueIsEmpty = 10;
+    public const uint ChannelFlagCanFdIsoSupport = 0x8000_0000;
+
+    public const ushort CanFdEventTagReceiveOk = 0x0400;
+    public const ushort CanFdEventTagTransmitMsg = 0x0440;
+    public const uint CanFdMsgFlagEdl = 0x0001;
+    public const uint CanFdMsgFlagBrs = 0x0002;
+    public const uint CanFdMsgFlagRtr = 0x0010;
+    public const uint CanFdRxMsgFlagErrorFrame = 0x0200;
+
+    // Only fields needed for capability and active timing lookup are exposed; the remaining bytes belong to
+    // the SDK. XLchannelConfig is packed to one byte and has a fixed 227-byte ABI.
+    [StructLayout(LayoutKind.Explicit, Pack = 1, Size = 227)]
+    public unsafe struct XLchannelConfig
+    {
+        [FieldOffset(0)] public fixed byte Name[32];
+        [FieldOffset(34)] public byte HardwareChannel;
+        [FieldOffset(42)] public ulong ChannelMask;
+        [FieldOffset(50)] public uint ChannelCapabilities;
+        [FieldOffset(54)] public uint ChannelBusCapabilities;
+        [FieldOffset(63)] public uint BusType;
+        [FieldOffset(67)] public uint ArbitrationBitRate;
+        [FieldOffset(72)] public byte Tseg1Abr;
+        [FieldOffset(73)] public byte Tseg2Abr;
+        [FieldOffset(77)] public byte Tseg1Dbr;
+        [FieldOffset(78)] public byte Tseg2Dbr;
+        [FieldOffset(79)] public uint DataBitRate;
+        [FieldOffset(83)] public byte CanOpMode;
+        [FieldOffset(147)] public uint SerialNumber;
+    }
+
+    [InlineArray(64)]
+    public struct XLchannelConfigs
+    {
+        private XLchannelConfig _element0;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public unsafe struct XLdriverConfig
+    {
+        public uint DllVersion;
+        public uint ChannelCount;
+        public fixed uint Reserved[10];
+        public XLchannelConfigs Channels;
+    }
+
+    public static XLchannelConfig? FindChannel(in XLdriverConfig config, ulong channelMask)
+    {
+        for (var i = 0; i < Math.Min(config.ChannelCount, 64u); i++)
+        {
+            var channel = config.Channels[i];
+            if (channel.ChannelMask == channelMask)
+                return channel;
+        }
+        return null;
+    }
+
+    public static bool SupportsIsoCanFd(in XLdriverConfig config, ulong channelMask) =>
+        FindChannel(config, channelMask) is { } channel && (channel.ChannelCapabilities & ChannelFlagCanFdIsoSupport) != 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XLcanFdConf
+    {
+        public uint ArbitrationBitRate;
+        public uint SjwAbr;
+        public uint Tseg1Abr;
+        public uint Tseg2Abr;
+        public uint DataBitRate;
+        public uint SjwDbr;
+        public uint Tseg1Dbr;
+        public uint Tseg2Dbr;
+        public byte Reserved;
+        public byte Options;
+        public fixed byte Reserved1[2];
+        public uint Reserved2;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XLcanTxEvent
+    {
+        public ushort Tag;
+        public ushort TransId;
+        public byte ChannelIndex;
+        public fixed byte Reserved[3];
+        public uint CanId;
+        public uint MsgFlags;
+        public byte Dlc;
+        public fixed byte Reserved1[7];
+        public fixed byte Data[64];
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XLcanRxEvent
+    {
+        public uint Size;
+        public ushort Tag;
+        public byte ChannelIndex;
+        public byte Reserved;
+        public uint UserHandle;
+        public ushort FlagsChip;
+        public ushort Reserved0;
+        public ulong Reserved1;
+        public ulong TimeStamp;
+        // XL_CAN_EV_RX_MSG is the largest member of the event union (96 bytes).
+        public uint CanId;
+        public uint MsgFlags;
+        public uint Crc;
+        public fixed byte Reserved2[12];
+        public ushort TotalBitCount;
+        public byte Dlc;
+        public fixed byte Reserved3[5];
+        public fixed byte Data[64];
+    }
 
     public const byte EventTagReceiveMsg = 1;
     public const byte EventTagChipState = 4;
@@ -98,14 +201,20 @@ internal static partial class VectorXlNative
     [LibraryImport(DllName, EntryPoint = "xlCloseDriver")]
     public static partial short CloseDriver();
 
-    [LibraryImport(DllName, EntryPoint = "xlGetApplConfig", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial short GetApplConfig(string appName, uint appChannel, out uint hwType, out uint hwIndex, out uint hwChannel, uint busType);
-
-    [LibraryImport(DllName, EntryPoint = "xlGetChannelMask")]
-    public static partial ulong GetChannelMask(int hwType, int hwIndex, int hwChannel);
-
     [LibraryImport(DllName, EntryPoint = "xlOpenPort", StringMarshalling = StringMarshalling.Utf8)]
-    public static partial short OpenPort(out int portHandle, string userName, ulong accessMask, out ulong permissionMask, uint rxQueueSize, uint xlInterfaceVersion, uint busType);
+    public static partial short OpenPort(out int portHandle, string userName, ulong accessMask, ref ulong permissionMask, uint rxQueueSize, uint xlInterfaceVersion, uint busType);
+
+    [LibraryImport(DllName, EntryPoint = "xlGetDriverConfig")]
+    public static partial short GetDriverConfig(out XLdriverConfig config);
+
+    [LibraryImport(DllName, EntryPoint = "xlCanFdSetConfiguration")]
+    public static partial short CanFdSetConfiguration(int portHandle, ulong accessMask, in XLcanFdConf config);
+
+    [LibraryImport(DllName, EntryPoint = "xlCanTransmitEx")]
+    public static partial short CanTransmitEx(int portHandle, ulong accessMask, uint messageCount, out uint sentCount, in XLcanTxEvent message);
+
+    [LibraryImport(DllName, EntryPoint = "xlCanReceive")]
+    public static partial short CanReceive(int portHandle, out XLcanRxEvent xlEvent);
 
     [LibraryImport(DllName, EntryPoint = "xlActivateChannel")]
     public static partial short ActivateChannel(int portHandle, ulong accessMask, uint busType, uint flags);
